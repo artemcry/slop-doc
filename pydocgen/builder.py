@@ -8,7 +8,7 @@ import argparse
 
 from pydocgen.tree_builder import build_tree, Node, TreeBuilderError
 from pydocgen.template_engine import render_template, TemplateEngineError
-from pydocgen.cross_links import build_index, resolve_links, CrossLinkError
+from pydocgen.cross_links import build_index, resolve_links, CrossLinkError, _get_folder_slug
 from pydocgen.markdown_renderer import markdown_to_html
 from pydocgen.layout import assemble_page, copy_assets, generate_search_index
 
@@ -66,14 +66,17 @@ def build_docs(config_path: str) -> None:
                 if node.source and node.source in source_data_by_folder:
                     source_data = source_data_by_folder[node.source]
 
+                # Compute folder_slug for class links (e.g., 'dataflow' from 'api-reference/dataflow.html')
+                folder_slug = _get_folder_slug(node.output_path)
+
                 # Render template (Step 6 part 1)
-                rendered = render_template(template_content, node.params, source_data)
+                rendered = render_template(template_content, node.params, source_data, folder_slug)
 
                 # Convert markdown to HTML (Step 6 part 2)
                 html_content = markdown_to_html(rendered)
 
                 # Resolve cross-links (Step 6 part 3)
-                html_content = resolve_links(html_content, index)
+                html_content = resolve_links(html_content, index, node.output_path)
 
                 # Assemble page (Step 7)
                 page_html = assemble_page(html_content, node, tree, project_name, version)

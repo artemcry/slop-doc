@@ -218,7 +218,7 @@ def evaluate_collection_expr(expr: str, source_data: SourceData | None, var_name
     return collection
 
 
-def render_data_tag(tag: str, target: str | None, modifier: str | None, source_data: SourceData | None) -> str:
+def render_data_tag(tag: str, target: str | None, modifier: str | None, source_data: SourceData | None, folder_slug: str = "") -> str:
     """Render a {{data_tag}} or {{data_tag#target}} tag.
 
     Args:
@@ -226,6 +226,7 @@ def render_data_tag(tag: str, target: str | None, modifier: str | None, source_d
         target: The target name if present (e.g., "Pipeline").
         modifier: Optional modifier (e.g., "run,stop" for methods_filtered).
         source_data: SourceData for looking up class/function info.
+        folder_slug: Folder slug for generating class links.
 
     Returns:
         Rendered HTML string.
@@ -240,7 +241,7 @@ def render_data_tag(tag: str, target: str | None, modifier: str | None, source_d
     if tag == 'classes':
         if target:
             raise TemplateEngineError(f"Tag {{{{{tag}}}}} does not take a target")
-        return _render_classes_table(source_data)
+        return _render_classes_table(source_data, folder_slug)
 
     if tag == 'functions':
         if target:
@@ -333,12 +334,13 @@ def render_data_tag(tag: str, target: str | None, modifier: str | None, source_d
     raise TemplateEngineError(f"Unknown data tag: {{{{{tag}#{target}}}}}")
 
 
-def render_data_tags(body: str, source_data: SourceData | None) -> str:
+def render_data_tags(body: str, source_data: SourceData | None, folder_slug: str = "") -> str:
     """Replace all {{data_tag}} patterns in body with rendered content.
 
     Args:
         body: Template body with {{data_tag}} patterns.
         source_data: SourceData for looking up class/function info.
+        folder_slug: Folder slug for generating class links.
 
     Returns:
         Body with data tags rendered.
@@ -351,12 +353,12 @@ def render_data_tags(body: str, source_data: SourceData | None) -> str:
         target = match.group(2)  # could be None
         modifier = match.group(3)  # could be None (for .exclude or filtered)
 
-        return render_data_tag(tag, target, modifier, source_data)
+        return render_data_tag(tag, target, modifier, source_data, folder_slug)
 
     return DATA_TAG_PATTERN.sub(replace_tag, body)
 
 
-def _render_classes_table(source_data: SourceData) -> str:
+def _render_classes_table(source_data: SourceData, folder_slug: str = "") -> str:
     """Render HTML table of classes."""
     if not source_data.classes:
         return "<p>No classes found.</p>"
@@ -364,7 +366,8 @@ def _render_classes_table(source_data: SourceData) -> str:
     rows = []
     for cls in source_data.classes:
         desc = cls.short_description or "No description"
-        rows.append(f"<tr><td><a href=\"#{cls.name}\">{cls.name}</a></td><td>{desc}</td></tr>")
+        link_target = f"{folder_slug}/{cls.name}" if folder_slug else cls.name
+        rows.append(f"<tr><td>[[{link_target}]]</td><td>{desc}</td></tr>")
 
     return f"<table class='classes-table'>\n<thead><tr><th>Class</th><th>Description</th></tr></thead>\n<tbody>\n{''.join(rows)}\n</tbody>\n</table>"
 
@@ -528,8 +531,8 @@ def _render_methods_summary(class_data, method_type: str) -> str:
     for method in methods:
         sig = _render_function_signature(method)
         desc = method.short_description or "No description"
-        anchor = f"detail_{method.name}"
-        rows.append(f"<tr><td><a href=\"#{anchor}\">{sig}</a></td><td>{desc}</td></tr>")
+        anchor = method.name
+        rows.append(f"<tr><td><a href=\"#{anchor}\">{method.name}</a>{sig[len(method.name):]}</td><td>{desc}</td></tr>")
 
     return (f"<table class='methods-table'>\n"
             f"<thead><tr><th>Signature</th><th>Description</th></tr></thead>\n"
@@ -554,7 +557,7 @@ def _render_methods_details(class_data) -> str:
     parts = []
     for method in methods:
         sig = _render_function_signature(method)
-        anchor = f"detail_{method.name}"
+        anchor = method.name
 
         html = f'<div class="method-detail">\n'
         html += f'<h3 id="{anchor}"><span class="method-name">{method.name}</span><span class="method-params">({", ".join(a.name for a in method.args if a.name != "self")})</span></h3>\n'
@@ -622,13 +625,14 @@ def _render_function_signature(func) -> str:
     return sig
 
 
-def render_template(template_content: str, params: dict[str, str], source_data: SourceData | None) -> str:
+def render_template(template_content: str, params: dict[str, str], source_data: SourceData | None, folder_slug: str = "") -> str:
     """Render a template with the given params and source data.
 
     Args:
         template_content: Raw .dtmpl template content.
         params: Dict of parameter values from node config.
         source_data: SourceData from the node's source folder (can be None).
+        folder_slug: Folder slug for generating class links (e.g., 'dataflow').
 
     Returns:
         Rendered template string (may still have [[cross-links]] to resolve).
@@ -656,6 +660,6 @@ def render_template(template_content: str, params: dict[str, str], source_data: 
     body = expand_for_loops(body, source_data)
 
     # Step 4: {{data_tag}} rendering
-    body = render_data_tags(body, source_data)
+    body = render_data_tags(body, source_data, folder_slug)
 
     return body

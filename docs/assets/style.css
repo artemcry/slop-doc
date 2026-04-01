@@ -249,7 +249,7 @@ h3 {
 
 p { margin-bottom: 12px; color: #E3E3E3; }
 
-a { color: #74C0FC; text-decoration: none; }
+a { color: #74C0FC; text-decoration: none; font-weight: 700; }
 a:hover { text-decoration: underline; }
 
 /* ── Tables ──────────────────────────────────────────────── */
@@ -388,13 +388,24 @@ pre code {
   animation: highlight-fade 5s ease-out;
 }
 
+.content h2:target,
+.content h3:target,
+.content .method-detail:target {
+  background: transparent;
+  animation: highlight-fade 2s ease-out;
+}
+
 /* Scroll margin so fixed header doesn't cover headings */
 h1[id], h2[id], h3[id], .method-detail[id] {
   scroll-margin-top: 64px;
 }
 
 @keyframes highlight-fade {
-  0% { background: #2c3e50; }
+  0%   { background: #152f4a; }
+  20%  { background: #4d8ba3; }
+  40%  { background: #152f4a; }
+  60%  { background: #4d8ba3; }
+  80%  { background: #152f4a; }
   100% { background: transparent; }
 }
 

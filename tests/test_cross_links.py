@@ -2,80 +2,77 @@
 
 import pytest
 from pydocgen.cross_links import (
-    CrossLinkIndex, resolve_links, build_index, CrossLinkError
+    CrossLinkIndex, resolve_links, build_index, CrossLinkError, _get_folder_slug
 )
 from pydocgen.tree_builder import Node
 from pydocgen.parser import SourceData, ClassData, FunctionData
 
 
+class TestGetFolderSlug:
+    """Test folder slug extraction from output paths."""
+
+    def test_module_page(self):
+        """api-reference/dataflow.html -> dataflow"""
+        assert _get_folder_slug("api-reference/dataflow.html") == "dataflow"
+
+    def test_class_page(self):
+        """api-reference/dataflow/pipeline-class.html -> dataflow"""
+        assert _get_folder_slug("api-reference/dataflow/pipeline-class.html") == "dataflow"
+
+    def test_root_page(self):
+        """introduction.html -> ''"""
+        assert _get_folder_slug("introduction.html") == ""
+
+
 class TestResolveClassLink:
-    """Test resolving class links."""
+    """Test resolving class links with mandatory folder/ClassName format."""
 
     def test_resolve_class_link(self):
-        """See [[Pipeline]], index has Pipeline."""
+        """See [[dataflow/Pipeline]], index has dataflow/Pipeline."""
         index = CrossLinkIndex()
-        index.qualified_index["Pipeline"] = "/api-reference/dataflow/pipeline-class.html"
-        index.short_index["Pipeline"] = [
-            ("/api-reference/dataflow/pipeline-class.html", "Pipeline", "DataFlow")
-        ]
+        index.folder_class_index["dataflow/Pipeline"] = "/api-reference/dataflow/pipeline-class.html"
 
-        text = "See [[Pipeline]]"
+        text = "See [[dataflow/Pipeline]]"
         result = resolve_links(text, index)
         assert '<a href="/api-reference/dataflow/pipeline-class.html">Pipeline</a>' in result
 
     def test_resolve_method_link(self):
-        """Call [[Pipeline.run]]."""
+        """Call [[dataflow/Pipeline.run]]."""
         index = CrossLinkIndex()
-        index.qualified_index["Pipeline.run"] = "/api-reference/dataflow/pipeline-class.html#run"
+        index.folder_class_index["dataflow/Pipeline"] = "/api-reference/dataflow/pipeline-class.html"
 
-        text = "Call [[Pipeline.run]]"
+        text = "Call [[dataflow/Pipeline.run]]"
         result = resolve_links(text, index)
-        assert "#run" in result
+        assert "pipeline-class.html#run" in result
 
     def test_resolve_custom_text(self):
-        """[[Pipeline|the main class]]."""
+        """[[dataflow/Pipeline|the main class]]."""
         index = CrossLinkIndex()
-        index.qualified_index["Pipeline"] = "/api-reference/dataflow/pipeline-class.html"
-        index.short_index["Pipeline"] = [
-            ("/api-reference/dataflow/pipeline-class.html", "Pipeline", "DataFlow")
-        ]
+        index.folder_class_index["dataflow/Pipeline"] = "/api-reference/dataflow/pipeline-class.html"
 
-        text = "[[Pipeline|the main class]]"
+        text = "[[dataflow/Pipeline|the main class]]"
         result = resolve_links(text, index)
         assert 'href="/api-reference/dataflow/pipeline-class.html"' in result
         assert "the main class" in result
 
+    def test_resolve_no_folder_raises_error(self):
+        """[[Pipeline]] without folder should raise error."""
+        index = CrossLinkIndex()
+
+        text = "[[Pipeline]]"
+        with pytest.raises(CrossLinkError) as exc:
+            resolve_links(text, index)
+        assert "Invalid cross-link format" in str(exc.value)
+        assert "folder/ClassName" in str(exc.value)
+
     def test_resolve_not_found(self):
-        """[[NonExistent]] should raise error."""
+        """[[nonexistent/Pipeline]] should raise error."""
         index = CrossLinkIndex()
 
-        text = "[[NonExistent]]"
+        text = "[[nonexistent/Pipeline]]"
         with pytest.raises(CrossLinkError) as exc:
             resolve_links(text, index)
-        assert "NonExistent" in str(exc.value)
-
-    def test_ambiguous_name(self):
-        """Two classes named 'Config' in different modules."""
-        index = CrossLinkIndex()
-        index.short_index["Config"] = [
-            ("/api-reference/utils/config.html", "Config", "Utils"),
-            ("/api-reference/core/config.html", "Config", "Core"),
-        ]
-
-        text = "[[Config]]"
-        with pytest.raises(CrossLinkError) as exc:
-            resolve_links(text, index)
-        assert "Ambiguous" in str(exc.value)
-        assert "Suggestions:" in str(exc.value)
-
-    def test_fully_qualified(self):
-        """[[dataflow.Pipeline]] resolves correctly even with ambiguity."""
-        index = CrossLinkIndex()
-        index.qualified_index["dataflow.Pipeline"] = "/api-reference/dataflow/pipeline-class.html"
-
-        text = "[[dataflow.Pipeline]]"
-        result = resolve_links(text, index)
-        assert "pipeline-class.html" in result
+        assert "not found" in str(exc.value)
 
     def test_no_links(self):
         """No links in text returns unchanged."""
@@ -90,18 +87,20 @@ class TestBuildIndex:
     """Test building the cross-link index."""
 
     def test_build_index_with_classes(self):
-        """Index built from tree with class nodes."""
+        """Index built from tree with class nodes uses folder_class_index."""
         tree = [
             Node(
                 title="DataFlow",
-                template="module",
-                output_path="/api-reference/dataflow/index.html",
+                template="default_module",
+                output_path="/api-reference/dataflow.html",
                 source="/path/to/src/dataflow"
             )
         ]
         source_data = {
             "/path/to/src/dataflow": SourceData(
-                classes=[ClassData(name="Pipeline", base_classes=[], decorators=[])],
+                classes=[
+                    ClassData(name="Pipeline", short_description="A pipeline", full_description="", methods=[], decorators=[], base_classes=[], properties=[])
+                ],
                 functions=[],
                 constants=[]
             )
@@ -109,18 +108,62 @@ class TestBuildIndex:
 
         index = build_index(tree, source_data)
 
-        assert "Pipeline" in index.short_index
-        # Classes are stored as "module.ClassName" in qualified_index
-        assert "DataFlow.Pipeline" in index.qualified_index
+        # Should have folder_class_index entry
+        assert "dataflow/Pipeline" in index.folder_class_index
+        assert index.folder_class_index["dataflow/Pipeline"] == "/api-reference/dataflow.html"
 
-    def test_build_index_with_methods(self):
-        """Index includes method anchors."""
+    def test_build_index_with_class_pages(self):
+        """Index built with child class pages."""
         tree = [
             Node(
                 title="DataFlow",
-                template="module",
-                output_path="/api-reference/dataflow/index.html",
-                source="/path/to/src/dataflow"
+                template="default_module",
+                output_path="/api-reference/dataflow.html",
+                source="/path/to/src/dataflow",
+                children=[
+                    Node(
+                        title="Pipeline Class",
+                        template="default_class",
+                        output_path="/api-reference/dataflow/pipeline-class.html",
+                        source="/path/to/src/dataflow",
+                        params={"CLASS_ID": "Pipeline"}
+                    )
+                ]
+            )
+        ]
+        source_data = {
+            "/path/to/src/dataflow": SourceData(
+                classes=[
+                    ClassData(name="Pipeline", short_description="A pipeline", full_description="", methods=[], decorators=[], base_classes=[], properties=[])
+                ],
+                functions=[],
+                constants=[]
+            )
+        }
+
+        index = build_index(tree, source_data)
+
+        # Should have folder_class_index entry pointing to class page
+        assert "dataflow/Pipeline" in index.folder_class_index
+        assert index.folder_class_index["dataflow/Pipeline"] == "/api-reference/dataflow/pipeline-class.html"
+
+    def test_build_index_with_methods(self):
+        """Methods are indexed under folder/class format."""
+        tree = [
+            Node(
+                title="DataFlow",
+                template="default_module",
+                output_path="/api-reference/dataflow.html",
+                source="/path/to/src/dataflow",
+                children=[
+                    Node(
+                        title="Pipeline Class",
+                        template="default_class",
+                        output_path="/api-reference/dataflow/pipeline-class.html",
+                        source="/path/to/src/dataflow",
+                        params={"CLASS_ID": "Pipeline"}
+                    )
+                ]
             )
         ]
         source_data = {
@@ -128,12 +171,14 @@ class TestBuildIndex:
                 classes=[
                     ClassData(
                         name="Pipeline",
-                        base_classes=[],
-                        decorators=[],
+                        short_description="A pipeline",
+                        full_description="",
                         methods=[
-                            FunctionData(name="run", args=[], decorators=[]),
-                            FunctionData(name="stop", args=[], decorators=[])
-                        ]
+                            FunctionData(name="run", args=[], return_type="None", short_description="Run the pipeline", full_description="", parameters=[], returns=None, raises=[])
+                        ],
+                        decorators=[],
+                        base_classes=[],
+                        properties=[]
                     )
                 ],
                 functions=[],
@@ -143,10 +188,9 @@ class TestBuildIndex:
 
         index = build_index(tree, source_data)
 
-        # Should have Pipeline.run and Pipeline.stop
-        assert "Pipeline.run" in index.qualified_index
-        assert "Pipeline.stop" in index.qualified_index
-        assert index.qualified_index["Pipeline.run"] == "/api-reference/dataflow/index.html#run"
+        # Should have method indexed
+        assert "dataflow/Pipeline.run" in index.folder_class_index
+        assert index.folder_class_index["dataflow/Pipeline.run"] == "/api-reference/dataflow/pipeline-class.html"
 
 
 class TestCrossLinkPattern:
@@ -157,8 +201,7 @@ class TestCrossLinkPattern:
         import re
         CROSS_LINK_PATTERN = re.compile(r'\[\[([^\]|]+)(?:\|([^\]]+))?\]\]')
 
-        text = "[[Pipeline]]"
-        match = CROSS_LINK_PATTERN.search(text)
+        match = CROSS_LINK_PATTERN.search("See [[Pipeline]]")
         assert match.group(1) == "Pipeline"
         assert match.group(2) is None
 
@@ -167,20 +210,15 @@ class TestCrossLinkPattern:
         import re
         CROSS_LINK_PATTERN = re.compile(r'\[\[([^\]|]+)(?:\|([^\]]+))?\]\]')
 
-        text = "[[Pipeline|the main class]]"
-        match = CROSS_LINK_PATTERN.search(text)
+        match = CROSS_LINK_PATTERN.search("[[Pipeline|The Class]]")
         assert match.group(1) == "Pipeline"
-        assert match.group(2) == "the main class"
+        assert match.group(2) == "The Class"
 
     def test_pattern_with_method(self):
         """[[Target.method]] pattern."""
         import re
         CROSS_LINK_PATTERN = re.compile(r'\[\[([^\]|]+)(?:\|([^\]]+))?\]\]')
 
-        text = "[[Pipeline.run]]"
-        match = CROSS_LINK_PATTERN.search(text)
+        match = CROSS_LINK_PATTERN.search("[[Pipeline.run]]")
         assert match.group(1) == "Pipeline.run"
-
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+        assert match.group(2) is None

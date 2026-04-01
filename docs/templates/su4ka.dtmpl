@@ -4,5 +4,16 @@ param@PIZSd
   <div class="su4ka-content">
   <p>This is a placeholder for the <a href="https://su4ka.com">su4ka</a> widget.</p>
   <p>You can replace this content with your own widget code.%%PIZSd%%</p>
+  <p>Test link to [[dataflow/Pipeline]] class.</p>
+  <p>Test link to [[dataflow/Pipeline.run]] method.</p>
+  <p>Test link with custom text: [[dataflow/Pipeline|Click here for Pipeline]]</p>
   </div>
 </div>
+
+# da eta PIZSd
+---
+```
+  def main(_oizds): # pidr [[dataflow/Pipeline.run|Su4kas]]
+```
+---
+## su4ka pdd4
