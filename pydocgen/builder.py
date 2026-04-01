@@ -67,10 +67,14 @@ def build_docs(config_path: str) -> None:
                     source_data = source_data_by_folder[node.source]
 
                 # Compute folder_slug for class links (e.g., 'dataflow' from 'api-reference/dataflow.html')
+                # Use node.source to get the correct folder, not output_path (which may be a child page)
                 folder_slug = _get_folder_slug(node.output_path)
+                if node.source:
+                    # Derive folder from source path (e.g., '/path/to/src/dataflow' -> 'dataflow')
+                    folder_slug = os.path.basename(node.source.rstrip('/'))
 
                 # Render template (Step 6 part 1)
-                rendered = render_template(template_content, node.params, source_data, folder_slug)
+                rendered = render_template(template_content, node.params, source_data, folder_slug, node.output_path)
 
                 # Convert markdown to HTML (Step 6 part 2)
                 html_content = markdown_to_html(rendered)

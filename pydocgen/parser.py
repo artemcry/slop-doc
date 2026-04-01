@@ -185,7 +185,7 @@ def parse_google_docstring(docstring: str) -> tuple[str, str, list[ParamDoc], Re
                 if len(lines) == 1:
                     full_desc = short_desc
             elif stripped:
-                full_desc += (" " if full_desc else "") + stripped
+                full_desc += ("\n" if full_desc else "") + stripped
         elif current_section == "args":
             # Parse arg lines like "    name: Type description" or "    name: description"
             content_line = line.lstrip()

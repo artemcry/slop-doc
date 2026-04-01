@@ -24,12 +24,19 @@ class Pipeline:
         """Number of registered nodes."""
         return len(self._nodes)
 
-    def add_node(self, node: "BaseNode") -> None:
-        """Add a processing node to the pipeline.
-
+    def add_node(self, node: "BaseNode", sexf : Pipeline) -> None:
+        """Add a processing node to the pipelindde. Da
+            Alo Help\n
+            dddd
+            ```
+              def sextest():
+                print("sex")
+            ```
+            True if all nodes completed successfully, False otherwise. 
+            Bla sdd Lvva
         Args:
             node: The node to add.
-
+            sexf: The pipeline to add the node to.
         Raises:
             ValueError: If max nodes exceeded.
         """

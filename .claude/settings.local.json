@@ -5,7 +5,8 @@
       "Bash(python -m pydocgen build --config docs_config.dcfg)",
       "Bash(python -m pydocgen build)",
       "Bash(python -m pytest tests/test_cross_links.py tests/test_template_engine.py -v)",
-      "Bash(python -c ':*)"
+      "Bash(python -c ':*)",
+      "Bash(python -m pydocgen --help)"
     ],
     "defaultMode": "bypassPermissions"
   }

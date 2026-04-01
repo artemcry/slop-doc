@@ -15,5 +15,52 @@ param@PIZSd
 ```
   def main(_oizds): # pidr [[dataflow/Pipeline.run|Su4kas]]
 ```
+### SU$Ki
+
+
+
+{{private_methods_summary#Pipeline}}
+
+
+## Module Tags
+{{classes}}
+{{functions}}
+{{constants}}
+
+## Class-Level Tags
+{{class_name#Pipeline}}
+{{class_short_description#Pipeline}}
+{{class_full_description#Pipeline}}
+{{class_info#Pipeline}}
+{{properties#Pipeline}}
+{{base_classes#Pipeline}}
+{{decorators#Pipeline}}
+{{source_link#Pipeline}}
+
+## Methods
+{{public_methods#Pipeline}}
+{{private_methods#Pipeline}}
+{{static_methods#Pipeline}}
+{{class_methods#Pipeline}}
+{{all_methods#Pipeline}}
+{{dunder_methods#Pipeline}}
+{{methods_details#Pipeline}}
+
+## Methods Summary (these generate cross-links)
+{{public_methods_summary#Pipeline}}
+{{private_methods_summary#Pipeline}}
+
+## Filtered Methods
+{{methods_filtered#Pipeline: run,stop}}
+{{public_methods_except#Pipeline: _validate}}
+
+## Cross-links
+[[dataflow/Pipeline]]
+[[dataflow/Pipeline|display text]]
+[[dataflow/Pipeline.run]]
+[[dataflow/Pipeline.run|Click to run]]
+[[dataflow/Pipeline.stop]]
+[[dataflow/Pipeline._validate]]
+
 ---
 ## su4ka pdd4

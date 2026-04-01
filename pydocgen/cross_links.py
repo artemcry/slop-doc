@@ -153,6 +153,9 @@ def resolve_links(text: str, index: CrossLinkIndex, current_page: str = "") -> s
             else:
                 # Extract just the name after '/' for display
                 display = target.rsplit('/', 1)[-1] if '/' in target else target
+                # For method links like 'folder/ClassName.method', show just 'method'
+                if '.' in display:
+                    display = display.rsplit('.', 1)[-1]
                 return f'<a href="{href}">{display}</a>'
         except CrossLinkError as e:
             raise CrossLinkError(f"Error resolving link [[{target}]]: {e}")

@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 from pydocgen.parser import SourceData
+from pydocgen.markdown_renderer import markdown_to_html
 
 
 class TemplateEngineError(Exception):
@@ -218,7 +219,7 @@ def evaluate_collection_expr(expr: str, source_data: SourceData | None, var_name
     return collection
 
 
-def render_data_tag(tag: str, target: str | None, modifier: str | None, source_data: SourceData | None, folder_slug: str = "") -> str:
+def render_data_tag(tag: str, target: str | None, modifier: str | None, source_data: SourceData | None, folder_slug: str = "", current_output_path: str = "") -> str:
     """Render a {{data_tag}} or {{data_tag#target}} tag.
 
     Args:
@@ -227,6 +228,7 @@ def render_data_tag(tag: str, target: str | None, modifier: str | None, source_d
         modifier: Optional modifier (e.g., "run,stop" for methods_filtered).
         source_data: SourceData for looking up class/function info.
         folder_slug: Folder slug for generating class links.
+        current_output_path: Output path of the current page being rendered.
 
     Returns:
         Rendered HTML string.
@@ -284,22 +286,22 @@ def render_data_tag(tag: str, target: str | None, modifier: str | None, source_d
         return _render_properties(class_data)
 
     if tag == 'public_methods':
-        return _render_methods(class_data, 'public')
+        return _render_methods(class_data, 'public', source_data, folder_slug)
 
     if tag == 'private_methods':
-        return _render_methods(class_data, 'private')
+        return _render_methods(class_data, 'private', source_data, folder_slug)
 
     if tag == 'static_methods':
-        return _render_methods(class_data, 'static')
+        return _render_methods(class_data, 'static', source_data, folder_slug)
 
     if tag == 'class_methods':
-        return _render_methods(class_data, 'classmethod')
+        return _render_methods(class_data, 'classmethod', source_data, folder_slug)
 
     if tag == 'all_methods':
-        return _render_methods(class_data, 'all')
+        return _render_methods(class_data, 'all', source_data, folder_slug)
 
     if tag == 'dunder_methods':
-        return _render_methods(class_data, 'dunder')
+        return _render_methods(class_data, 'dunder', source_data, folder_slug)
 
     if tag == 'source_link':
         return f"{class_data.source_file}:{class_data.source_line}"
@@ -314,33 +316,34 @@ def render_data_tag(tag: str, target: str | None, modifier: str | None, source_d
         if not modifier:
             raise TemplateEngineError("methods_filtered requires a list of method names")
         method_names = [m.strip() for m in modifier.split(',')]
-        return _render_methods_filtered(class_data, method_names)
+        return _render_methods_filtered(class_data, method_names, source_data, folder_slug)
 
     if tag == 'public_methods_except':
         if not modifier:
             raise TemplateEngineError("public_methods_except requires a list of method names to exclude")
         exclude_names = [m.strip() for m in modifier.split(',')]
-        return _render_methods_public_except(class_data, exclude_names)
+        return _render_methods_public_except(class_data, exclude_names, source_data, folder_slug)
 
     if tag == 'public_methods_summary':
-        return _render_methods_summary(class_data, 'public')
+        return _render_methods_summary(class_data, 'public', folder_slug, current_output_path, source_data)
 
     if tag == 'private_methods_summary':
-        return _render_methods_summary(class_data, 'private')
+        return _render_methods_summary(class_data, 'private', folder_slug, current_output_path, source_data)
 
     if tag == 'methods_details':
-        return _render_methods_details(class_data)
+        return _render_methods_details(class_data, source_data, folder_slug)
 
     raise TemplateEngineError(f"Unknown data tag: {{{{{tag}#{target}}}}}")
 
 
-def render_data_tags(body: str, source_data: SourceData | None, folder_slug: str = "") -> str:
+def render_data_tags(body: str, source_data: SourceData | None, folder_slug: str = "", current_output_path: str = "") -> str:
     """Replace all {{data_tag}} patterns in body with rendered content.
 
     Args:
         body: Template body with {{data_tag}} patterns.
         source_data: SourceData for looking up class/function info.
         folder_slug: Folder slug for generating class links.
+        current_output_path: Output path of the current page being rendered.
 
     Returns:
         Body with data tags rendered.
@@ -353,7 +356,7 @@ def render_data_tags(body: str, source_data: SourceData | None, folder_slug: str
         target = match.group(2)  # could be None
         modifier = match.group(3)  # could be None (for .exclude or filtered)
 
-        return render_data_tag(tag, target, modifier, source_data, folder_slug)
+        return render_data_tag(tag, target, modifier, source_data, folder_slug, current_output_path)
 
     return DATA_TAG_PATTERN.sub(replace_tag, body)
 
@@ -422,8 +425,15 @@ def _render_properties(class_data) -> str:
     return f"<table class='properties-table'>\n<thead><tr><th>Name</th><th>Type</th><th>Description</th></tr></thead>\n<tbody>\n{''.join(rows)}\n</tbody>\n</table>"
 
 
-def _render_methods(class_data, method_type: str) -> str:
-    """Render methods table of specified type."""
+def _render_methods(class_data, method_type: str, source_data: SourceData | None = None, folder_slug: str = "") -> str:
+    """Render methods table of specified type.
+
+    Args:
+        class_data: The class whose methods to render.
+        method_type: 'public', 'private', 'static', 'classmethod', 'dunder', or 'all'.
+        source_data: SourceData for linking types in signatures.
+        folder_slug: Folder slug for generating cross-links.
+    """
     methods = []
 
     for method in class_data.methods:
@@ -452,15 +462,22 @@ def _render_methods(class_data, method_type: str) -> str:
 
     rows = []
     for method in methods:
-        sig = _render_function_signature(method)
+        sig = _render_function_signature(method, source_data, folder_slug)
         desc = method.short_description or "No description"
         rows.append(f"<tr><td id='{method.name}'>{sig}</td><td>{desc}</td></tr>")
 
     return f"<table class='methods-table'>\n<thead><tr><th>Signature</th><th>Description</th></tr></thead>\n<tbody>\n{''.join(rows)}\n</tbody>\n</table>"
 
 
-def _render_methods_filtered(class_data, method_names: list[str]) -> str:
-    """Render only specified methods in specified order."""
+def _render_methods_filtered(class_data, method_names: list[str], source_data: SourceData | None = None, folder_slug: str = "") -> str:
+    """Render only specified methods in specified order.
+
+    Args:
+        class_data: The class whose methods to render.
+        method_names: List of method names to include.
+        source_data: SourceData for linking types in signatures.
+        folder_slug: Folder slug for generating cross-links.
+    """
     # Find methods by name
     methods = []
     for name in method_names:
@@ -474,15 +491,22 @@ def _render_methods_filtered(class_data, method_names: list[str]) -> str:
 
     rows = []
     for method in methods:
-        sig = _render_function_signature(method)
+        sig = _render_function_signature(method, source_data, folder_slug)
         desc = method.short_description or "No description"
         rows.append(f"<tr><td id='{method.name}'>{sig}</td><td>{desc}</td></tr>")
 
     return f"<table class='methods-table'>\n<thead><tr><th>Signature</th><th>Description</th></tr></thead>\n<tbody>\n{''.join(rows)}\n</tbody>\n</table>"
 
 
-def _render_methods_public_except(class_data, exclude_names: list[str]) -> str:
-    """Render public methods except those in exclude_names."""
+def _render_methods_public_except(class_data, exclude_names: list[str], source_data: SourceData | None = None, folder_slug: str = "") -> str:
+    """Render public methods except those in exclude_names.
+
+    Args:
+        class_data: The class whose methods to render.
+        exclude_names: List of method names to exclude.
+        source_data: SourceData for linking types in signatures.
+        folder_slug: Folder slug for generating cross-links.
+    """
     public_methods = []
     for method in class_data.methods:
         is_static = 'staticmethod' in method.decorators
@@ -503,15 +527,26 @@ def _render_methods_public_except(class_data, exclude_names: list[str]) -> str:
 
     rows = []
     for method in public_methods:
-        sig = _render_function_signature(method)
+        sig = _render_function_signature(method, source_data, folder_slug)
         desc = method.short_description or "No description"
         rows.append(f"<tr><td id='{method.name}'>{sig}</td><td>{desc}</td></tr>")
 
     return f"<table class='methods-table'>\n<thead><tr><th>Signature</th><th>Description</th></tr></thead>\n<tbody>\n{''.join(rows)}\n</tbody>\n</table>"
 
 
-def _render_methods_summary(class_data, method_type: str) -> str:
-    """Render methods summary table with links to the detail section below."""
+def _render_methods_summary(class_data, method_type: str, folder_slug: str = "", current_output_path: str = "", source_data: SourceData | None = None) -> str:
+    """Render methods summary table with links to the detail section below.
+
+    Args:
+        class_data: The class whose methods to render.
+        method_type: 'public' or 'private'.
+        folder_slug: Folder slug for generating cross-links.
+        current_output_path: Output path of the current page being rendered.
+        source_data: SourceData for linking types in signatures.
+
+    Returns:
+        HTML table of method summaries with appropriate links.
+    """
     methods = []
     for method in class_data.methods:
         is_static = 'staticmethod' in method.decorators
@@ -527,20 +562,44 @@ def _render_methods_summary(class_data, method_type: str) -> str:
     if not methods:
         return "<p>No methods.</p>"
 
+    # Determine if we're on the same class page
+    is_class_page = '-class.html' in current_output_path
+    # Extract current class ID from path (e.g., "pipeline" from "pipeline-class.html")
+    current_class_id = None
+    if is_class_page:
+        # Format is "ClassName-class.html" → extract "ClassName"
+        basename = current_output_path.split('/')[-1]
+        if basename.endswith('-class.html'):
+            current_class_id = basename[:-10]  # Remove '-class.html'
+
     rows = []
     for method in methods:
-        sig = _render_function_signature(method)
-        desc = method.short_description or "No description"
-        anchor = method.name
-        rows.append(f"<tr><td><a href=\"#{anchor}\">{method.name}</a>{sig[len(method.name):]}</td><td>{desc}</td></tr>")
+        sig = _render_function_signature(method, source_data, folder_slug)
+        desc_html = markdown_to_html(method.short_description or "No description")
+
+        # Generate link based on context
+        if is_class_page and current_class_id == class_data.name:
+            # Same class page - use anchor
+            link = f"<a href=\"#{method.name}\">{method.name}</a>"
+        else:
+            # Different page - use cross-link (resolve_links will convert [[...]] to <a>)
+            link = f"[[{folder_slug}/{class_data.name}.{method.name}]]"
+
+        rows.append(f"<tr><td>{link}{sig[len(method.name):]}</td><td>{desc_html}</td></tr>")
 
     return (f"<table class='methods-table'>\n"
             f"<thead><tr><th>Signature</th><th>Description</th></tr></thead>\n"
             f"<tbody>\n{''.join(rows)}\n</tbody>\n</table>")
 
 
-def _render_methods_details(class_data) -> str:
-    """Render full detail blocks for public and private methods, combined."""
+def _render_methods_details(class_data, source_data: SourceData | None = None, folder_slug: str = "") -> str:
+    """Render full detail blocks for public and private methods, combined.
+
+    Args:
+        class_data: The class whose methods to render.
+        source_data: SourceData for linking types in signatures.
+        folder_slug: Folder slug for generating cross-links.
+    """
     methods = []
     for method in class_data.methods:
         is_static = 'staticmethod' in method.decorators
@@ -556,47 +615,62 @@ def _render_methods_details(class_data) -> str:
 
     parts = []
     for method in methods:
-        sig = _render_function_signature(method)
+        sig = _render_function_signature(method, source_data, folder_slug)
         anchor = method.name
 
+        # Build method params with types for the header
+        params_parts = []
+        for arg in method.args:
+            if arg.name == 'self':
+                continue
+            if arg.type:
+                type_str = _link_type_if_class(arg.type, source_data, folder_slug)
+                params_parts.append(f"{arg.name}: {type_str}")
+            else:
+                params_parts.append(arg.name)
+        params_str = ", ".join(params_parts)
+
         html = f'<div class="method-detail">\n'
-        html += f'<h3 id="{anchor}"><span class="method-name">{method.name}</span><span class="method-params">({", ".join(a.name for a in method.args if a.name != "self")})</span></h3>\n'
+        html += f'<h3 id="{anchor}"><span class="method-name">{method.name}</span><span class="method-params">({params_str})</span></h3>\n'
         html += f'<div class="method-body">\n'
 
         desc = method.short_description
         if desc:
-            html += f'<p>{desc}</p>\n'
+            desc_html = markdown_to_html(desc)
+            html += f'{desc_html}\n'
+        if method.full_description and method.full_description != method.short_description:
+            # Strip leading whitespace from each line for proper markdown code blocks
+            full_desc_stripped = '\n'.join(line.lstrip() for line in method.full_description.split('\n'))
+            full_html = markdown_to_html(full_desc_stripped)
+            html += f'{full_html}\n'
 
         if method.parameters:
-            rows = []
+            html += '<h4>Parameters</h4>\n'
+            html += '<dl class="params-list">\n'
             for param in method.parameters:
-                type_str = param.type or "—"
                 opt = " <em>(optional)</em>" if param.is_optional else ""
-                rows.append(
-                    f"<tr><td><code>{param.name}</code></td>"
-                    f"<td>{type_str}</td><td>{param.description}{opt}</td></tr>"
-                )
-            html += (f"<table class='params-table'>\n"
-                     f"<thead><tr><th>Parameter</th><th>Type</th><th>Description</th></tr></thead>\n"
-                     f"<tbody>\n{''.join(rows)}\n</tbody>\n</table>\n")
+                html += f'<dd><code>{param.name}</code> — {param.description}{opt}</dd>\n'
+            html += '</dl>\n'
 
         if method.returns:
             ret_type = method.returns.type or method.return_type or ""
-            type_str = f" <code>{ret_type}</code>" if ret_type else ""
-            html += f"<div class='returns-block'><strong>Returns</strong>{type_str} — {method.returns.description}</div>\n"
+            ret_desc = method.returns.description or ""
+            if ret_type:
+                type_str = _link_type_if_class(ret_type, source_data, folder_slug)
+                html += f'<h4>Returns</h4>\n<div class="returns-block"><code>{type_str}</code> — {ret_desc}</div>\n'
+            else:
+                html += f'<h4>Returns</h4>\n<div class="returns-block">{ret_desc}</div>\n'
         elif method.return_type and method.return_type not in ('None', 'none'):
-            html += f"<div class='returns-block'><strong>Returns</strong> <code>{method.return_type}</code></div>\n"
+            type_str = _link_type_if_class(method.return_type, source_data, folder_slug)
+            html += f'<h4>Returns</h4>\n<div class="returns-block"><code>{type_str}</code></div>\n'
 
         if method.raises:
-            rows = []
+            html += '<h4>Raises</h4>\n'
+            html += '<dl class="raises-list">\n'
             for raise_doc in method.raises:
-                rows.append(
-                    f"<tr><td><code>{raise_doc.type}</code></td>"
-                    f"<td>{raise_doc.description}</td></tr>"
-                )
-            html += (f"<table class='raises-table'>\n"
-                     f"<thead><tr><th>Raises</th><th>Description</th></tr></thead>\n"
-                     f"<tbody>\n{''.join(rows)}\n</tbody>\n</table>\n")
+                type_str = _link_type_if_class(raise_doc.type, source_data, folder_slug)
+                html += f'<dd><code>{type_str}</code> — {raise_doc.description}</dd>\n'
+            html += '</dl>\n'
 
         html += '</div>\n'
         html += '</div>\n'
@@ -605,27 +679,110 @@ def _render_methods_details(class_data) -> str:
     return '\n'.join(parts)
 
 
-def _render_function_signature(func) -> str:
-    """Render a function signature as HTML."""
+def _render_function_signature(func, source_data: SourceData | None = None, folder_slug: str = "") -> str:
+    """Render a function signature as HTML.
+
+    Args:
+        func: The FunctionData to render.
+        source_data: SourceData for linking type names to classes.
+        folder_slug: Folder slug for generating cross-links.
+
+    Returns:
+        HTML string of the function signature.
+    """
     args = []
     for arg in func.args:
         if arg.name == 'self':
             continue
         arg_str = arg.name
         if arg.type:
-            arg_str = f"{arg_str}: {arg.type}"
+            type_str = _link_type_if_class(arg.type, source_data, folder_slug)
+            arg_str = f"{arg_str}: {type_str}"
         if arg.default:
             arg_str = f"{arg_str}={arg.default}"
         args.append(arg_str)
 
     sig = f"{func.name}({', '.join(args)})"
     if func.return_type:
-        sig = f"{sig} -> {func.return_type}"
+        type_str = _link_type_if_class(func.return_type, source_data, folder_slug)
+        sig = f"{sig} -> {type_str}"
 
     return sig
 
 
-def render_template(template_content: str, params: dict[str, str], source_data: SourceData | None, folder_slug: str = "") -> str:
+def _link_type_if_class(type_str: str, source_data: SourceData | None, folder_slug: str) -> str:
+    """Convert a type string to a cross-link if it's a class name.
+
+    Args:
+        type_str: The type string (e.g., 'BaseNode', 'List[int]', 'Optional[BaseNode]').
+        source_data: SourceData for checking if a type is a class.
+        folder_slug: Folder slug for generating cross-links.
+
+    Returns:
+        Linked or plain type string.
+    """
+    if not source_data or not folder_slug:
+        return type_str
+
+    # Extract class names from the type string
+    class_names = _extract_class_names_from_type(type_str)
+
+    if not class_names:
+        return type_str
+
+    # Check which class names exist in source_data
+    result = type_str
+    existing_class_names = {cls.name for cls in source_data.classes}
+
+    for cls_name in class_names:
+        if cls_name in existing_class_names:
+            link = f"[[{folder_slug}/{cls_name}]]"
+            result = result.replace(cls_name, link)
+
+    return result
+
+
+def _extract_class_names_from_type(type_str: str) -> list[str]:
+    """Extract potential class names from a type annotation string.
+
+    Handles:
+    - Simple types: 'BaseNode' -> ['BaseNode']
+    - Generics: 'List[BaseNode]' -> ['BaseNode']
+    - Nested generics: 'Dict[str, MyClass]' -> ['MyClass']
+    - Optional: 'Optional[BaseNode]' -> ['BaseNode']
+    - Unions: 'Union[A, B]' -> ['A', 'B']
+    - Nested: 'List[Optional[Dict[str, MyClass]]]' -> ['MyClass']
+
+    Args:
+        type_str: The type annotation string.
+
+    Returns:
+        List of potential class names found in the type.
+    """
+    import re
+
+    # Find all bare names (not followed by [ or :) that start with uppercase
+    # This avoids matching keywords like 'str', 'int', 'bool' but catches 'BaseNode', 'MyClass', etc.
+    # However, we want to catch ALL uppercase-starting names as potential classes
+
+    # Match identifiers: word characters including underscores
+    # But we need to be careful about 'str', 'int', 'bool' etc - these are builtins
+
+    # Simpler approach: find all ALL-CAPS or TitleCase identifiers
+    # Classes are typically TitleCase or ALL_CAPS (for constants used as types)
+
+    # Pattern to match potential class names (TitleCase or ALL_CAPS)
+    pattern = r'\b([A-Z][a-zA-Z0-9_]*)\b'
+
+    matches = re.findall(pattern, type_str)
+
+    # Filter out common builtin types that aren't classes in our source
+    # Actually, let's be inclusive - if it's a class in source_data, we'll link it
+
+    return matches
+
+
+def render_template(template_content: str, params: dict[str, str], source_data: SourceData | None, folder_slug: str = "", current_output_path: str = "") -> str:
     """Render a template with the given params and source data.
 
     Args:
@@ -633,6 +790,7 @@ def render_template(template_content: str, params: dict[str, str], source_data: 
         params: Dict of parameter values from node config.
         source_data: SourceData from the node's source folder (can be None).
         folder_slug: Folder slug for generating class links (e.g., 'dataflow').
+        current_output_path: Output path of the current page being rendered.
 
     Returns:
         Rendered template string (may still have [[cross-links]] to resolve).
@@ -660,6 +818,6 @@ def render_template(template_content: str, params: dict[str, str], source_data: 
     body = expand_for_loops(body, source_data)
 
     # Step 4: {{data_tag}} rendering
-    body = render_data_tags(body, source_data, folder_slug)
+    body = render_data_tags(body, source_data, folder_slug, current_output_path)
 
     return body

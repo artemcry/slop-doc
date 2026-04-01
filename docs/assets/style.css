@@ -348,7 +348,6 @@ pre code {
 
 .method-detail p {
   margin-bottom: 10px;
-  font-size: 13px;
 }
 
 .method-detail .params-table,
@@ -375,6 +374,66 @@ pre code {
   background: #222;
   border-left: 3px solid #5ba3c0;
   font-size: 13px;
+}
+
+/* ── Method Details — section lists (params, raises) ──────── */
+
+.method-detail h4 {
+  font-size: 15px;
+  font-weight: 600;
+  color: #E3E3E3;
+  margin-top: 16px;
+  margin-bottom: 6px;
+}
+
+.method-detail h4:first-child {
+  margin-top: 0;
+}
+
+.method-detail .params-list,
+.method-detail .raises-list {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.method-detail .params-list dt,
+.method-detail .raises-list dt {
+  display: none;
+}
+
+.method-detail .params-list dt code,
+.method-detail .raises-list dt code {
+  font-size: 13px;
+  background: #262626;
+  border: 1px solid #3a3a3a;
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+
+.method-detail .params-list dd,
+.method-detail .raises-list dd {
+  margin-left: 0;
+  color: #E3E3E3;
+  padding-bottom: 8px;
+  padding-left: 16px;
+  display: block;
+}
+
+.method-detail .params-list dd code,
+.method-detail .raises-list dd code {
+  font-size: 13px;
+  background: #262626;
+  border: 1px solid #3a3a3a;
+  border-radius: 3px;
+  padding: 1px 5px;
+  color: #c9d1d9;
+}
+
+.method-detail .params-list dd em,
+.method-detail .raises-list dd em {
+  color: #888;
+  font-style: italic;
 }
 
 /* ── Scroll spy highlight ─────────────────────────────────── */
