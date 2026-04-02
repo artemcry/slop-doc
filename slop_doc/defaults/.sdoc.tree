@@ -6,8 +6,6 @@ assets_dir: "assets/"
 docstring_style: "google"
 mainpage: "main_page"
 
-
-
 tree:
   - title: "Project Tree"
     auto_source: "../<path to project root>/"

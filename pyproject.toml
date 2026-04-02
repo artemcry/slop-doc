@@ -22,7 +22,7 @@ dev = ["pytest", "pytest-cov"]
 slop-doc = "slop_doc.builder:main"
 
 [tool.setuptools.package-data]
-slop_doc = ["defaults/*.css", "defaults/*.js", "defaults/templates/*.dtmpl"]
+slop_doc = ["defaults/*.css", "defaults/*.js", "defaults/*.tree", "defaults/templates/*.dtmpl"]
 
 [tool.setuptools.packages.find]
 where = ["."]

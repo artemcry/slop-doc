@@ -283,27 +283,120 @@ def _iterate_nodes(tree: list[Node]) -> list[Node]:
     return nodes
 
 
+def _find_config(directory: str | None = None) -> str:
+    """Resolve config path.
+
+    If directory is given, look for .sdoc.tree inside it.
+    Otherwise look for .sdoc.tree in CWD.
+
+    Raises:
+        BuildError: If config not found.
+    """
+    if directory:
+        path = os.path.abspath(os.path.join(directory, '.sdoc.tree'))
+        if not os.path.isfile(path):
+            raise BuildError(f"Config not found: {directory}/.sdoc.tree")
+        return path
+
+    path = os.path.join(os.getcwd(), '.sdoc.tree')
+    if not os.path.isfile(path):
+        raise BuildError(
+            "No .sdoc.tree found in current directory.\n"
+            "  Run 'slop-doc init' to create a docs folder, or pass -d <dir>."
+        )
+    return path
+
+
+def _cmd_init(name: str) -> int:
+    """Create a new docs folder with a default config."""
+    import shutil
+
+    target = os.path.join(os.getcwd(), name)
+    if os.path.exists(target):
+        print(f"Error: '{name}' already exists.", file=sys.stderr)
+        return 1
+
+    os.makedirs(target)
+
+    # Copy default .sdoc.tree into the new folder
+    defaults_pkg = importlib.resources.files("slop_doc.defaults")
+    default_config = defaults_pkg / ".sdoc.tree"
+    dest = os.path.join(target, ".sdoc.tree")
+
+    with importlib.resources.as_file(default_config) as src:
+        shutil.copy2(str(src), dest)
+
+    print(f"Created '{name}/' with default config.")
+    print(f"Edit '{name}/.sdoc.tree', then run 'slop-doc build' from '{name}/'.")
+    return 0
+
+
+def _cmd_open(config_path: str) -> int:
+    """Open index.html from the build output directory."""
+    import webbrowser
+    from slop_doc.tree_builder import parse_main_config
+
+    config = parse_main_config(config_path)
+    config_dir = os.path.dirname(os.path.abspath(config_path))
+    output_dir = os.path.join(config_dir, config.get('output_dir', 'build/docs/'))
+    build_root = os.path.dirname(output_dir)
+    index_html = os.path.join(build_root, 'index.html')
+
+    if not os.path.isfile(index_html):
+        print(f"Error: '{index_html}' not found. Run 'slop-doc build' first.", file=sys.stderr)
+        return 1
+
+    url = 'file:///' + index_html.replace('\\', '/')
+    print(f"Opening {index_html}")
+    webbrowser.open(url)
+    return 0
+
+
 def main() -> int:
     """Main CLI entry point.
 
     Returns:
         Exit code (0 for success, 1 for error).
     """
-    parser = argparse.ArgumentParser(description='slop-doc - Static documentation generator')
-    parser.add_argument('command', choices=['build'], help='Command to run')
-    parser.add_argument('--config', default='.sdoc.tree', help='Path to config file')
+    parser = argparse.ArgumentParser(
+        prog='slop-doc',
+        description='slop-doc - Static documentation generator',
+    )
+    subparsers = parser.add_subparsers(dest='command', metavar='command')
+    subparsers.required = True
+
+    # init
+    p_init = subparsers.add_parser('init', help='Create a new docs folder with default config')
+    p_init.add_argument('--name', default='docs', help='Docs folder name (default: docs)')
+
+    # build
+    p_build = subparsers.add_parser('build', help='Build documentation')
+    p_build.add_argument('-d', '--dir', default=None, metavar='DIR', help='Docs folder containing .sdoc.tree')
+
+    # open
+    p_open = subparsers.add_parser('open', help='Open built documentation in browser')
+    p_open.add_argument('-d', '--dir', default=None, metavar='DIR', help='Docs folder containing .sdoc.tree')
 
     args = parser.parse_args()
 
-    if args.command == 'build':
-        try:
-            build_docs(args.config)
+    try:
+        if args.command == 'init':
+            return _cmd_init(args.name)
+
+        if args.command == 'build':
+            config_path = _find_config(args.dir)
+            build_docs(config_path)
             return 0
-        except BuildError as e:
-            print(f"Error: {e}", file=sys.stderr)
-            return 1
-        except Exception as e:
-            print(f"Unexpected error: {e}", file=sys.stderr)
-            return 1
+
+        if args.command == 'open':
+            config_path = _find_config(args.dir)
+            return _cmd_open(config_path)
+
+    except BuildError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+    except Exception as e:
+        print(f"Unexpected error: {e}", file=sys.stderr)
+        return 1
 
     return 0
