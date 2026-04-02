@@ -294,20 +294,19 @@ def _get_function_decorators(node: ast.FunctionDef | ast.AsyncFunctionDef) -> li
 def _parse_args(node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[ArgData]:
     """Parse function arguments from AST."""
     args_data = []
-    for arg in node.args.args:
+    num_args = len(node.args.args)
+    num_defaults = len(node.args.defaults)
+    first_default_arg_index = num_args - num_defaults
+
+    for i, arg in enumerate(node.args.args):
         arg_type = None
         if arg.annotation:
             arg_type = _get_annotation_name(arg.annotation)
 
         default = None
-        if node.args.defaults:
-            # Map defaults to args from the right
-            arg_index = len(node.args.args) - 1
-            for i, default_expr in enumerate(reversed(node.args.defaults)):
-                if len(node.args.args) - 1 - i == arg_index:
-                    default = _get_default_value(default_expr)
-                    break
-            arg_index -= 1
+        default_index = i - first_default_arg_index
+        if default_index >= 0:
+            default = _get_default_value(node.args.defaults[default_index])
 
         args_data.append(ArgData(name=arg.arg, type=arg_type, default=default))
     return args_data
@@ -470,19 +469,7 @@ def parse_file(filepath: str) -> SourceData:
                 continue
             classes.append(_parse_class(node, filepath))
 
-        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            # Skip private and dunder functions at module level
-            if node.name.startswith("_") and not node.name.startswith("__"):
-                continue
-            if node.name.startswith("__"):
-                continue
-            # Only top-level functions (not inside classes)
-            if isinstance(node.parent if hasattr(node, 'parent') else None, ast.Module):
-                pass
-            # Simpler check: functions defined directly in Module
-            functions.append(_parse_function(node, filepath))
-
-    # Filter to only top-level functions (re-parse correctly)
+    # Filter to only top-level functions
     top_level_functions = []
     for node in tree.body:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -518,9 +505,9 @@ def parse_folder(folder_path: str) -> SourceData:
                     all_classes.extend(data.classes)
                     all_functions.extend(data.functions)
                     all_constants.extend(data.constants)
-                except Exception:
-                    # Skip files that can't be parsed
-                    pass
+                except Exception as e:
+                    import warnings
+                    warnings.warn(f"Could not parse {filepath}: {e}")
 
     return SourceData(
         classes=all_classes,

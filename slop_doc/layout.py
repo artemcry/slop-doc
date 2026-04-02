@@ -7,7 +7,7 @@ import os
 import posixpath
 from dataclasses import dataclass
 
-from pydocgen.tree_builder import Node
+from slop_doc.tree_builder import Node
 
 
 def _assets_prefix(output_path: str) -> str:
@@ -228,8 +228,6 @@ def generate_search_index(tree: list[Node], source_data_by_folder: dict[str, any
             if '-class.html' in node.output_path:
                 class_name = node.title.replace(' Class', '')
                 class_page_urls[class_name] = node.output_path
-            elif node.title in ('Introduction', 'Getting Started', 'Installation', 'API Reference', 'DataFlow'):
-                folder_page_urls[node.title] = node.output_path
         for child in node.children:
             scan_for_class_pages(child)
 
