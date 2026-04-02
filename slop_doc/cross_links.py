@@ -125,7 +125,7 @@ def resolve_links(text: str, index: CrossLinkIndex, current_page: str = "") -> s
     Args:
         text: Text containing [[Target]] patterns.
         index: CrossLinkIndex for resolving targets.
-        current_page: Output path of the current page (for relative link计算).
+        current_page: Output path of the current page (for relative link resolution).
 
     Returns:
         Text with [[Target]] replaced by <a href> tags.

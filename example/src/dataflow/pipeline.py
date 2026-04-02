@@ -40,6 +40,8 @@ class Pipeline:
         Raises:
             ValueError: If max nodes exceeded.
         """
+        class TESTDAA:
+            pass
         if len(self._nodes) >= MAX_NODES:
             raise ValueError("Max nodes exceeded")
         self._nodes.append(node)

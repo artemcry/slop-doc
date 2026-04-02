@@ -9,7 +9,7 @@ from typing import Any
 
 import yaml
 
-from slop_doc.dcfg_preprocessor import expand_macros, DCFGPreprocessorError
+from slop_doc.sdoc_preprocessor import expand_macros, SDOCPreprocessorError
 from slop_doc.parser import SourceData, parse_folder
 
 
@@ -64,7 +64,7 @@ def parse_folder_config(config_path: str, source_folder: str, class_names: list[
     # Expand macros
     try:
         expanded = expand_macros(content, class_names, function_names)
-    except DCFGPreprocessorError as e:
+    except SDOCPreprocessorError as e:
         raise TreeBuilderError(f"Error preprocessing {config_path}: {e}")
 
     # Parse YAML

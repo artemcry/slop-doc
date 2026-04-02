@@ -457,7 +457,7 @@ def parse_file(filepath: str) -> SourceData:
                     ))
 
     # Get classes and top-level functions
-    for node in ast.walk(tree):
+    for node in ast.iter_child_nodes(tree):
         if isinstance(node, ast.ClassDef):
             # Skip private classes
             if node.name.startswith("_") and not node.name.startswith("__"):

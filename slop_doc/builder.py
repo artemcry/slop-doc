@@ -9,7 +9,7 @@ import importlib.resources
 
 from slop_doc.tree_builder import build_tree, Node, TreeBuilderError
 from slop_doc.template_engine import render_template, TemplateEngineError
-from slop_doc.cross_links import build_index, resolve_links, CrossLinkError, _get_folder_slug
+from slop_doc.cross_links import build_index, resolve_links, CrossLinkError, _get_folder_slug, CrossLinkIndex
 from slop_doc.markdown_renderer import markdown_to_html
 from slop_doc.layout import assemble_page, generate_search_index
 
@@ -61,6 +61,100 @@ def _copy_assets_with_defaults(assets_dir: str, output_dir: str, defaults_dir: s
         shutil.copy2(defaults_search, os.path.join(output_assets, 'search.js'))
 
 
+def _get_template_path(template_name: str, templates_dir: str, defaults_templates_dir: str) -> str:
+    """Find the template file path.
+
+    Looks for:
+    1. {templates_dir}/{template_name}.dtmpl
+    2. {templates_dir}/default_{template_name}.dtmpl (for default templates)
+    3. {defaults_templates_dir}/{template_name}.dtmpl
+    4. {defaults_templates_dir}/default_{template_name}.dtmpl
+
+    Args:
+        template_name: Template name (without extension).
+        templates_dir: User templates directory.
+        defaults_templates_dir: Default templates directory.
+
+    Returns:
+        Path to the template file.
+
+    Raises:
+        BuildError: If template not found.
+    """
+    # Try user templates first (e.g., main_page.dtmpl or mainpage.dtmpl)
+    for name in [template_name, f"default_{template_name}"]:
+        path = os.path.join(templates_dir, f"{name}.dtmpl")
+        if os.path.exists(path):
+            return path
+
+    # Try default templates
+    for name in [template_name, f"default_{template_name}"]:
+        path = os.path.join(defaults_templates_dir, f"{name}.dtmpl")
+        if os.path.exists(path):
+            return path
+
+    raise BuildError(f"Template '{template_name}' not found")
+
+
+def _build_mainpage(
+    mainpage_template: str,
+    project_name: str,
+    version: str,
+    templates_dir: str,
+    defaults_templates_dir: str,
+    build_root: str,
+    tree: list[Node],
+    search_index: str,
+) -> None:
+    """Build the main page (index.html) at build root level.
+
+    Args:
+        mainpage_template: Template name (without .dtmpl extension).
+        project_name: Project name for page content.
+        version: Version string for page content.
+        templates_dir: User templates directory.
+        defaults_templates_dir: Default templates directory.
+        build_root: Root of build output (e.g., build/ from build/docs/).
+        tree: Navigation tree.
+        search_index: JSON search index string.
+    """
+    # Create a virtual node for the main page
+    mainpage_node = Node(
+        title=project_name,
+        template=mainpage_template,
+        params={
+            'PROJECT_NAME': project_name,
+            'VERSION': version,
+        },
+        output_path='index.html',
+    )
+
+    # Load template
+    template_path = _get_template_path(mainpage_template, templates_dir, defaults_templates_dir)
+
+    with open(template_path, 'r', encoding='utf-8') as f:
+        template_content = f.read()
+
+    # Render template (no source data for main page)
+    rendered = render_template(template_content, mainpage_node.params, None, '', mainpage_node.output_path)
+
+    # Convert markdown to HTML
+    html_content = markdown_to_html(rendered)
+
+    # Resolve cross-links (empty index for main page since it's at root)
+    empty_index = CrossLinkIndex()
+    html_content = resolve_links(html_content, empty_index, mainpage_node.output_path)
+
+    # Assemble page
+    page_html = assemble_page(html_content, mainpage_node, tree, project_name, version, search_index)
+
+    # Write output to build_root/index.html
+    output_path = os.path.join(build_root, 'index.html')
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    with open(output_path, 'w', encoding='utf-8') as f:
+        f.write(page_html)
+
+
 def build_docs(config_path: str) -> None:
     """Build all documentation.
 
@@ -84,6 +178,7 @@ def build_docs(config_path: str) -> None:
         output_dir = os.path.join(config_dir, config.get('output_dir', 'build/docs/'))
         templates_dir = os.path.join(config_dir, config.get('templates_dir', 'docs/templates/'))
         assets_dir = os.path.join(config_dir, config.get('assets_dir', 'docs/assets/'))
+        mainpage_template = config.get('mainpage', 'main_page')
 
         # Get defaults directory from package
         defaults_pkg = importlib.resources.files("slop_doc.defaults")
@@ -91,11 +186,22 @@ def build_docs(config_path: str) -> None:
         defaults_templates_dir = os.path.join(defaults_dir, 'templates')
         defaults_style_css = os.path.join(defaults_dir, 'style.css')
 
+        # Build root is the parent of output_dir (e.g., build/ from build/docs/)
+        # Need to normalize to handle trailing slashes properly
+        build_root = os.path.dirname(output_dir)
+
         # Step 2: Build cross-link index
         index = build_index(tree, source_data_by_folder)
 
         # Step 3: Generate search index (needed before page assembly)
         search_index = generate_search_index(tree, source_data_by_folder)
+
+        # Step 3b: Build main page (index.html at build root)
+        _build_mainpage(
+            mainpage_template, project_name, version,
+            templates_dir, defaults_templates_dir,
+            build_root, tree, search_index
+        )
 
         # Step 4: Process each node
         pages_built = 0

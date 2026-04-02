@@ -299,12 +299,18 @@ tree:
 
 ## How It Works
 
-slop-doc builds your documentation in **7 stages**:
+slop-doc builds your documentation in **8 stages**:
 
 ```
 Config File (.sdoc.tree)
          │
          ▼
+┌─────────────────────┐
+│  SDOC Preprocessor  │  Expand macros in .sdoc configs
+│ (sdoc_preprocessor) │
+└─────────┬───────────┘
+          │
+          ▼
 ┌─────────────────┐
 │  Tree Builder   │  Parse .sdoc.tree + .sdoc configs → navigation tree
 │  (tree_builder) │
@@ -354,7 +360,16 @@ Extracts structured data from Python source files using the AST (Abstract Syntax
 
 Uses Google-style docstrings (Args:, Returns:, Raises:, Examples:).
 
-### Stage 2 — Tree Builder (`tree_builder.py`)
+### Stage 2 — SDOC Preprocessor (`sdoc_preprocessor.py`)
+
+Expands macros in `.sdoc` YAML configs before parsing:
+
+- `%%__CLASSES%%` — replaced with one entry per class
+- `%%__CLASS%%` — current class name (inside block)
+- `%%__FUNCTIONS%%` / `%%__FUNCTION%%` — same for functions
+- `.exclude(ClassName)` — filter out specific items
+
+### Stage 3 — Tree Builder (`tree_builder.py`)
 
 Parses `.sdoc.tree` and `.sdoc` YAML configs into a **navigation tree**:
 
@@ -371,7 +386,7 @@ Node {
 
 Handles `auto_source` scanning (finds `.sdoc` files recursively) and macro expansion (`%%__CLASSES__%%`, `%%__FUNCTIONS__%%`).
 
-### Stage 3 — Cross-Link Index (`cross_links.py`)
+### Stage 4 — Cross-Link Index (`cross_links.py`)
 
 Builds a global index for `[[folder/ClassName]]` cross-references:
 
@@ -379,7 +394,7 @@ Builds a global index for `[[folder/ClassName]]` cross-references:
 - **qualified_index**: `"Pipeline.run"` → URL with anchor
 - **short_index**: `"Pipeline"` → list of possible matches (for disambiguation)
 
-### Stage 4 — Template Engine (`template_engine.py`)
+### Stage 5 — Template Engine (`template_engine.py`)
 
 Processes `.dtmpl` templates in 4 steps:
 
@@ -388,11 +403,11 @@ Processes `.dtmpl` templates in 4 steps:
 3. **Expand `:: for X in ... :: endfor`** — Loop over classes/functions
 4. **Render `{{data_tag}}`** — Insert auto-generated content (`{{classes}}`, `{{methods_details}}`, etc.)
 
-### Stage 5 — Markdown Renderer (`markdown_renderer.py`)
+### Stage 6 — Markdown Renderer (`markdown_renderer.py`)
 
 Converts Markdown to HTML using the Markdown library.
 
-### Stage 6 — Layout (`layout.py`)
+### Stage 7 — Layout (`layout.py`)
 
 Assembles the final HTML page:
 
@@ -402,7 +417,7 @@ Assembles the final HTML page:
 - **Content** — the rendered page content
 - **Assets** — copies CSS/JS, falls back to defaults if not provided
 
-### Stage 7 — Output
+### Stage 8 — Output
 
 Writes the HTML file to `output_dir`. Assets are copied (user dir first, then defaults for missing files like `style.css`).
 

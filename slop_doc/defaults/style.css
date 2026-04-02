@@ -83,14 +83,16 @@ header {
   top: 48px; bottom: 0; left: 0;
   overflow-y: auto;
   padding: 12px 0;
-  user-select: none;
-  -webkit-user-select: none;
 }
 
 .nav-tree {
   list-style: none;
   padding: 0;
   margin: 0;
+}
+
+/* Disable text selection in nav tree only */
+.no-select {
   user-select: none;
   -webkit-user-select: none;
 }
@@ -106,8 +108,6 @@ header {
   list-style: none;
   padding: 0;
   margin: 0;
-  user-select: none;
-  -webkit-user-select: none;
 }
 
 .nav-children li > a,
@@ -131,8 +131,6 @@ header {
   font-size: 13px;
   border-left: 3px solid transparent;
   transition: background .12s, color .12s;
-  user-select: none;
-  -webkit-user-select: none;
 }
 
 .nav-label {
@@ -170,8 +168,6 @@ header {
   display: flex;
   align-items: center;
   justify-content: center;
-  user-select: none;
-  -webkit-user-select: none;
 }
 
 .nav-toggle::before {
@@ -187,8 +183,6 @@ header {
 
 .has-children {
   position: relative;
-  user-select: none;
-  -webkit-user-select: none;
 }
 
 .has-children .nav-label,
@@ -527,10 +521,6 @@ h1[id], h2[id], h3[id], .method-detail[id] {
   100% { background: transparent; }
 }
 
-::selection {
-  background: transparent;
-  color: inherit;
-}
 
 /* ── Responsive ──────────────────────────────────────────── */
 

@@ -75,7 +75,7 @@ def _generate_nav_node(node: Node, current_path: str | None, page_path: str | No
     else:
         should_expand = expand_parents and _is_ancestor(node, current_path)
 
-    classes = ['nav-item']
+    classes = ['nav-item', 'no-select']
     if is_current:
         classes.append('active')
     if is_container:
