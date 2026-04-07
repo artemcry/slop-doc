@@ -387,69 +387,12 @@ def assemble_page(
       {contents_html}
     </aside>
   </div>
-  <script src="{prefix}assets/search.js"></script>
+  <script src="{prefix}assets/app.js"></script>
   <script>
   // Embedded search index (avoids XHR CORS issues with file:// protocol)
   window.__SEARCH_INDEX__ = {search_index};
   // Prefix for search result URLs (computed server-side by layout.py)
   window.__SEARCH_PREFIX__ = '{prefix}';
-  </script>
-  <script>
-(function() {{
-  // Scroll spy - highlight current section in contents sidebar
-  var tocLinks = document.querySelectorAll('.contents-sidebar a');
-  var headings = [];
-
-  // Collect all heading IDs
-  document.querySelectorAll('h2[id], h3[id], .method-detail[id]').forEach(function(el) {{
-    headings.push({{ id: el.id, el: el }});
-  }});
-
-  function highlightCurrent() {{
-    var scrollY = window.scrollY + 60;
-    var current = null;
-
-    for (var i = headings.length - 1; i >= 0; i--) {{
-      var h = headings[i].el;
-      if (h.offsetTop <= scrollY) {{
-        current = headings[i].id;
-        break;
-      }}
-    }}
-
-    tocLinks.forEach(function(link) {{
-      link.classList.remove('current');
-      if (current && link.getAttribute('href') === '#' + current) {{
-        link.classList.add('current');
-        link.scrollIntoView({{ behavior: 'smooth', block: 'nearest' }});
-      }}
-    }});
-  }}
-
-  // Restart :target animation for any anchor link on the page
-  document.addEventListener('click', function(e) {{
-    var link = e.target.closest('a[href]');
-    if (!link) return;
-    var href = link.getAttribute('href');
-    var anchor = href && href.includes('#') ? href.split('#').pop() : null;
-    if (!anchor) return;
-    var targetEl = document.getElementById(anchor);
-    if (!targetEl) return;
-    targetEl.style.animation = 'none';
-    void targetEl.offsetWidth;
-    targetEl.style.animation = '';
-  }});
-
-  window.addEventListener('scroll', highlightCurrent);
-  tocLinks.forEach(function(link) {{
-    link.addEventListener('click', function() {{
-      tocLinks.forEach(function(l) {{ l.classList.remove('current'); }});
-      void link.offsetWidth;
-      link.classList.add('current');
-    }});
-  }});
-  highlightCurrent();
-}})();
   </script>
 </body>
 </html>'''

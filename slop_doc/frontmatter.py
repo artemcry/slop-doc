@@ -23,6 +23,7 @@ class PageMeta:
     title: str = ""
     default_source_folder: str | None = None
     children: dict | None = None  # {"classes": [...], "functions": [...]}
+    order: int | None = None      # explicit sort order (lower = first)
     raw: dict = field(default_factory=dict)
 
 
@@ -66,10 +67,14 @@ def parse_frontmatter(content: str) -> tuple[PageMeta, str]:
     if not isinstance(data, dict):
         raise FrontmatterError("Front-matter must be a JSON object")
 
+    order_raw = data.get('order')
+    order = int(order_raw) if order_raw is not None else None
+
     meta = PageMeta(
         title=data.get('title', ''),
         default_source_folder=data.get('default_source_folder'),
         children=data.get('children'),
+        order=order,
         raw=data,
     )
 

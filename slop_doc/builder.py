@@ -79,7 +79,7 @@ def _copy_assets(assets_dir: str | None, output_dir: str, defaults_dir: str) -> 
     """Copy assets into output_dir/assets/.
 
     User assets_dir takes priority; missing style.css falls back to defaults.
-    search.js always comes from defaults.
+    app.js always comes from defaults.
     """
     output_assets = os.path.join(output_dir, 'assets')
     if os.path.exists(output_assets):
@@ -103,10 +103,10 @@ def _copy_assets(assets_dir: str | None, output_dir: str, defaults_dir: str) -> 
         if os.path.exists(default_style):
             shutil.copy2(default_style, style_dest)
 
-    # Always copy search.js from defaults
-    default_search = os.path.join(defaults_dir, 'search.js')
-    if os.path.exists(default_search):
-        shutil.copy2(default_search, os.path.join(output_assets, 'search.js'))
+    # Always copy app.js from defaults
+    default_app = os.path.join(defaults_dir, 'app.js')
+    if os.path.exists(default_app):
+        shutil.copy2(default_app, os.path.join(output_assets, 'app.js'))
 
 
 # ---------------------------------------------------------------------------
@@ -442,9 +442,15 @@ def _cmd_init(name: str) -> int:
     return 0
 
 
-def _cmd_open(docs_root: str) -> int:
-    """Open index.html from the build output."""
+def _cmd_open(docs_root: str, port: int = 8000) -> int:
+    """Serve built docs via local HTTP server and open in browser."""
     import webbrowser
+    from http.server import HTTPServer, SimpleHTTPRequestHandler
+    from functools import partial
+
+    class _QuietHandler(SimpleHTTPRequestHandler):
+        def log_message(self, format, *args):
+            pass  # suppress request logging
 
     config = _read_project_config(docs_root)
     output_dir = os.path.join(docs_root, config.get('output_dir', 'build'))
@@ -454,9 +460,25 @@ def _cmd_open(docs_root: str) -> int:
         print(f"Error: '{index_html}' not found. Run 'slop-doc build' first.", file=sys.stderr)
         return 1
 
-    url = 'file:///' + index_html.replace('\\', '/')
-    print(f"Opening {index_html}")
+    handler = partial(_QuietHandler, directory=output_dir)
+    # Find a free port starting from the requested one
+    for p in range(port, port + 100):
+        try:
+            server = HTTPServer(('127.0.0.1', p), handler)
+            break
+        except OSError:
+            continue
+    else:
+        print("Error: could not find a free port.", file=sys.stderr)
+        return 1
+
+    url = f'http://127.0.0.1:{p}'
     webbrowser.open(url)
+
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        server.server_close()
     return 0
 
 
@@ -478,8 +500,9 @@ def main() -> int:
     p_build.add_argument('-d', '--dir', default=None, metavar='DIR', help='Docs folder containing root.md')
 
     # open
-    p_open = subparsers.add_parser('open', help='Open built documentation in browser')
+    p_open = subparsers.add_parser('open', help='Serve docs locally and open in browser')
     p_open.add_argument('-d', '--dir', default=None, metavar='DIR', help='Docs folder containing root.md')
+    p_open.add_argument('-p', '--port', default=8000, type=int, metavar='PORT', help='HTTP port (default: 8000)')
 
     args = parser.parse_args()
 
@@ -494,7 +517,7 @@ def main() -> int:
 
         if args.command == 'open':
             docs_root = _find_docs_root(args.dir)
-            return _cmd_open(docs_root)
+            return _cmd_open(docs_root, port=args.port)
 
     except BuildError as e:
         print(f"Error: {e}", file=sys.stderr)

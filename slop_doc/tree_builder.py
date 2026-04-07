@@ -39,6 +39,7 @@ class Node:
     auto_class: str | None = None # class name for auto-generated class pages
     auto_function: str | None = None  # function name for auto-generated function pages
     auto_source_file: str | None = None  # source file basename (no ext) for file-function pages
+    order: int | None = None          # explicit sort order (lower = first)
     meta: PageMeta = field(default_factory=PageMeta)
 
 
@@ -176,6 +177,7 @@ def _walk_folder(
         content=folder_body,
         source=effective_source,
         output_path=f"{output_prefix}/index.html" if output_prefix else "",
+        order=folder_meta.order,
         meta=folder_meta,
     )
 
@@ -218,12 +220,22 @@ def _walk_folder(
         if sub_node is not None:
             folder_node.children.append(sub_node)
 
+    # --- Sort children by explicit order (if any) ---
+    # Nodes with order come first (sorted by order value),
+    # then nodes without order keep their original position.
+    _sort_by_order(folder_node.children)
+
     # --- Skip folders with no content ---
     if not has_root and not has_md_files and not folder_node.children:
         print(f"WARNING: Folder has no root.md and no .md files — skipping: {folder_path}", file=sys.stderr)
         return None
 
     return folder_node
+
+
+def _sort_by_order(children: list[Node]) -> None:
+    """Stable-sort children: nodes with ``order`` first (ascending), rest keep position."""
+    children.sort(key=lambda n: (0, n.order) if n.order is not None else (1, 0))
 
 
 # ---------------------------------------------------------------------------
@@ -274,6 +286,7 @@ def _process_md_file(
         content=body,
         source=effective_source,
         output_path=output_path,
+        order=meta.order,
         meta=meta,
     )
 

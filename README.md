@@ -31,7 +31,7 @@ slop-doc open -d docs
 |---|---|
 | `slop-doc init [--name <folder>]` | Create a new docs folder with a starter `root.md`. Default name: `docs` |
 | `slop-doc build [-d <dir>]` | Build documentation. Looks for `root.md` in `-d` dir or current directory |
-| `slop-doc open [-d <dir>]` | Open built `index.html` in the browser |
+| `slop-doc open [-d <dir>] [-p <port>]` | Serve built docs via local HTTP server and open in browser. SPA navigation works here (default port 8000) |
 
 ---
 
@@ -52,7 +52,7 @@ my-docs/                    ← docs root (contains root.md)
         └── root.md
 ```
 
-**Build output**: a self-contained HTML site with `assets/style.css`, `assets/search.js`, and one `.html` per page. Works with `file://` protocol (no server needed).
+**Build output**: a self-contained HTML site with `assets/style.css`, `assets/app.js`, and one `.html` per page. Use `slop-doc open` to serve locally — pages load via SPA navigation (no full reload, smooth fade transitions). Also works with `file://` protocol (falls back to standard page loads).
 
 ---
 
@@ -78,6 +78,7 @@ Page content here...
 | `title` | `string` | Display name in the nav tree. Falls back to the first `#` heading, then filename |
 | `default_source_folder` | `string` | Path to Python source folder for this page (and its children). Resolved relative to the **parent directory** of the docs root |
 | `children` | `object` | Auto-generated child pages from source code. See [Children](#children) |
+| `order` | `int` | Explicit sort position in the nav tree (lower = shown first). Optional — unordered pages keep their filename-based position after ordered ones |
 
 ### Project-level keys (only in the root `root.md`)
 
@@ -221,7 +222,7 @@ You can also mix tag expansion with explicit names:
 
 ### Auto-generated class page content
 
-Each auto-generated class page contains:
+Each auto-generated class page contains (empty sections are automatically hidden):
 
 ```
 # ClassName
@@ -232,13 +233,13 @@ Each auto-generated class page contains:
 (module, file:line, base classes)
 
 ## Properties
-(table of @property methods)
+(table of @property methods — hidden if none)
 
 ## Public Methods
-(summary table with links)
+(summary table with links — hidden if none)
 
 ## Private Methods
-(summary table)
+(summary table — hidden if none)
 
 ## Method Details
 (full signature, parameters, returns, raises for each method)
@@ -399,18 +400,37 @@ Classes are automatically classified based on their base classes and decorators:
 
 Files are sorted in the nav tree by:
 
-1. **Numeric prefix first**: `1-intro.md`, `2-setup.md`, `3-api.md` — sorted by number
-2. **Alphabetical second**: files without numeric prefix sort alphabetically
+1. **`order` front-matter field first**: pages with `"order": N` appear before unordered pages, sorted ascending by N
+2. **Numeric prefix second**: `1-intro.md`, `2-setup.md`, `3-api.md` — sorted by number
+3. **Alphabetical third**: files without numeric prefix or order sort alphabetically
 
 The numeric prefix is stripped from the display title: `1-introduction.md` shows as "Introduction".
+
+Example using `order`:
+
+```markdown
+{
+    "title": "Getting Started",
+    "order": 1
+}
+```
 
 ---
 
 ## Assets and Styling
 
-slop-doc ships with a default dark theme (`style.css`) and client-side search (`search.js`).
+slop-doc ships with a default dark theme (`style.css`) and client-side app (`app.js`).
 
-To customize:
+The app provides:
+
+- **SPA navigation** — internal links are fetched and swapped without full page reload (falls back to normal navigation on `file://` or fetch failure)
+- **Smooth transitions** — content fade-in, nav tree expand/collapse animation, sidebar width transitions
+- **Client-side search** — search index is embedded inline in each page (no server required)
+- **Scroll spy** — right sidebar highlights the current section on scroll
+- **Anchor highlight** — clicking an anchor link smoothly scrolls and flashes the target element
+- **Nav tree persistence** — expand/collapse state is saved in localStorage across page loads
+
+To customize styling:
 
 1. Set `assets_dir` in your root `root.md`:
    ```json
@@ -421,7 +441,7 @@ To customize:
 
 2. Place your custom `style.css` in that folder. It will replace the default.
 
-The `search.js` is always copied from defaults (the search index is embedded inline in each page).
+The `app.js` is always copied from defaults (the search index is embedded inline in each page).
 
 ---
 
@@ -536,7 +556,7 @@ docs/build/
 │   └── ...
 └── assets/
     ├── style.css
-    └── search.js
+    └── app.js
 ```
 
 ---
@@ -552,6 +572,128 @@ docs/build/
 | `[[folder/Class]]` | Page body | Cross-link to class page |
 | `[[folder/Class.method]]` | Page body | Cross-link to method anchor |
 | `[[folder/Class\|text]]` | Page body | Cross-link with custom display text |
+
+---
+
+## Architecture
+
+### Modules
+
+| Module | Purpose |
+|---|---|
+| `builder.py` | Build orchestrator — drives the full pipeline, CLI commands (`init`, `build`, `open`) |
+| `tree_builder.py` | Walks the docs folder, builds the navigation tree of `Node` objects |
+| `frontmatter.py` | Parses relaxed JSON front-matter from `.md` files |
+| `parser.py` | Python AST source parser — extracts classes, functions, constants, docstrings |
+| `tag_renderer.py` | Expands `{{data tags}}` and `%presentation functions%` into HTML |
+| `cross_links.py` | Builds cross-link index and resolves `[[Target]]` patterns |
+| `markdown_renderer.py` | Converts Markdown to HTML, adds heading anchors |
+| `layout.py` | Assembles 3-column HTML pages: nav tree, content, contents sidebar |
+
+### Build Pipeline
+
+When `slop-doc build` runs, the following steps execute in order:
+
+```
+1. Read project config
+   └─ Parse root.md front-matter → project_name, version, output_dir, assets_dir
+
+2. Build navigation tree
+   └─ Recursively walk docs folder (tree_builder.py)
+      ├─ Parse each .md front-matter + body
+      ├─ Resolve default_source_folder (inherited down the tree)
+      ├─ Expand children: generators ({{classes}}, {{functions}}, etc.)
+      ├─ Parse Python source folders on demand (cached)
+      └─ Sort nodes: order field → numeric prefix → alphabetical
+
+3. Build cross-link index
+   └─ Walk tree, index every class page URL + method anchors
+
+4. Generate search index
+   └─ Walk tree, collect all pages/classes/methods/functions/constants → JSON
+
+5. Render each page
+   │  For each node in the tree:
+   │
+   ├─ Auto-class pages → generate Markdown body from presentation functions
+   ├─ Regular pages → use .md file content
+   ├─ Empty folders with children → simple "# Title" placeholder
+   │
+   └─ Page rendering pipeline:
+      a. Expand %presentation_functions(args)%  →  HTML tables/details
+      b. Expand remaining {{data_tags}}         →  cross-links or inline text
+      c. Strip empty sections                   →  remove headings with no content
+      d. Markdown → HTML                        →  via python-markdown
+      e. Resolve [[cross-links]]                →  relative <a href> tags
+      f. Assemble full HTML page                →  3-column layout with nav, breadcrumb, search index
+
+6. Copy assets
+   └─ User assets (override) → default style.css (fallback) → app.js (always from defaults)
+```
+
+### Source Parsing
+
+`parser.py` uses Python's `ast` module to extract structured data from `.py` files:
+
+- **Classes**: name, base classes, decorators, docstring, properties, methods, classification (enum / dataclass / interface / protocol / exception / plain)
+- **Functions**: name, args (with types + defaults), return type, decorators, docstring
+- **Constants**: `ALL_CAPS` module-level assignments with values and types
+- **Docstrings**: Google-style parsing — `Args:`, `Returns:`, `Raises:`, `Examples:` sections
+
+Two scopes per folder:
+- **Flat** — only direct `.py` files (used by `{{classes}}`, `{{functions}}`, etc.)
+- **Recursive** — includes all subfolders (used by `{{classes_rec}}`, `{{functions_rec}}`, etc.)
+
+### Tree Structure
+
+Each node in the tree is a `Node` dataclass:
+
+```
+Node
+├── title              display title
+├── content            markdown body (from .md file)
+├── source             path to Python source folder
+├── output_path        relative output path (e.g. api/client.html)
+├── children           list of child Nodes
+├── order              explicit sort order (from front-matter)
+├── is_auto            true for auto-generated pages
+├── auto_class         class name (for auto class pages)
+├── auto_function      function name (for function nav nodes)
+└── meta               PageMeta from front-matter
+```
+
+Folder structure maps directly to the nav tree:
+- `root.md` in a folder → folder node config + landing page
+- Other `.md` files → child pages
+- Subfolders with `root.md` → nested folder nodes
+- `children` front-matter → auto-generated class/function pages
+
+### HTML Output
+
+Each page is a self-contained HTML file with embedded search index:
+
+```html
+<header>  project name | breadcrumb | search input  </header>
+
+<nav class="sidebar-left">     ← navigation tree (persistent expand/collapse state)
+<main class="content">          ← rendered page content
+<aside class="sidebar-right">   ← table of contents (h2/h3 headings, scroll spy)
+
+<script src="assets/app.js">    ← SPA navigation, search, scroll spy, transitions
+<script>                         ← embedded search index + prefix (inline, no CORS issues)
+```
+
+### Client-Side App (`app.js`)
+
+The app runs entirely client-side with no build step or dependencies:
+
+- **SPA navigation**: intercepts internal link clicks, fetches pages via `fetch()`, swaps `.content` / sidebar / breadcrumb / nav without full reload. Falls back to normal navigation on `file://` or fetch failure
+- **Search**: filters embedded `__SEARCH_INDEX__` by title substring, renders dropdown
+- **Scroll spy**: highlights current section in the right sidebar on scroll
+- **Nav tree**: expand/collapse with localStorage persistence, animated via `max-height` CSS transitions
+- **Anchor navigation**: smooth scroll + highlight flash animation on target element
+- **Sidebar sync**: `ResizeObserver` keeps content margin aligned with dynamic sidebar width
+- **History**: `pushState` / `popstate` for browser back/forward support within SPA
 
 ## License
 
