@@ -167,7 +167,7 @@
         scrollToAnchor(anchor);
       });
     } else {
-      window.scrollTo(0, 0);
+      var c = document.querySelector('.content'); if (c) c.scrollTop = 0;
     }
 
     // Re-init scroll spy and PDF viewer
@@ -254,6 +254,10 @@
 
     input.addEventListener('input', function () { search(this.value.trim()); });
     input.addEventListener('focus', function () { if (this.value.trim()) search(this.value.trim()); });
+    input.addEventListener('blur', function () {
+      var inp = this;
+      setTimeout(function () { inp.value = ''; hideResults(); }, 150);
+    });
 
     document.addEventListener('click', function (e) {
       if (input && !input.parentNode.contains(e.target)) hideResults();
@@ -287,7 +291,7 @@
         a.href = getPrefix() + r.url;
         a.textContent = r.title;
         a.style.cssText =
-          'display:block;padding:6px 14px;color:#e3e3e3;text-decoration:none;font-size:14px';
+          'display:block;padding:6px 14px;color:#999;text-decoration:none;font-size:13px;font-weight:400';
         a.onmouseover = function () { a.style.background = '#3a3a3a'; };
         a.onmouseout = function () { a.style.background = ''; };
         li.appendChild(a);
@@ -319,12 +323,15 @@
     var links = document.querySelectorAll('.contents-sidebar a');
     if (!links.length) return;
 
+    var container = document.querySelector('.content');
+    if (!container) return;
+
     if (window._slopScrollSpy) {
-      window.removeEventListener('scroll', window._slopScrollSpy);
+      container.removeEventListener('scroll', window._slopScrollSpy);
     }
 
     function onScroll() {
-      var scrollY = window.scrollY + 80;
+      var scrollY = container.scrollTop + 80;
       var current = null;
       links.forEach(function (a) {
         var id = a.getAttribute('href').slice(1);
@@ -336,7 +343,7 @@
     }
 
     window._slopScrollSpy = onScroll;
-    window.addEventListener('scroll', onScroll, { passive: true });
+    container.addEventListener('scroll', onScroll, { passive: true });
     onScroll();
   }
 
@@ -350,12 +357,15 @@
       headings.push({ id: el.id, el: el });
     });
 
+    var container = document.querySelector('.content');
+    if (!container) return;
+
     if (window._slopInlineScrollSpy) {
-      window.removeEventListener('scroll', window._slopInlineScrollSpy);
+      container.removeEventListener('scroll', window._slopInlineScrollSpy);
     }
 
     function highlightCurrent() {
-      var scrollY = window.scrollY + 60;
+      var scrollY = container.scrollTop + 60;
       var current = null;
       for (var i = headings.length - 1; i >= 0; i--) {
         if (headings[i].el.offsetTop <= scrollY) {
@@ -373,7 +383,7 @@
     }
 
     window._slopInlineScrollSpy = highlightCurrent;
-    window.addEventListener('scroll', highlightCurrent, { passive: true });
+    container.addEventListener('scroll', highlightCurrent, { passive: true });
     highlightCurrent();
   }
 
@@ -459,6 +469,27 @@
     });
   }
 
+  /* ── Scrollbar proximity hover ─────────────────────────── */
+
+  function initScrollbarHover() {
+    var pairs = [
+      { sel: '.content', zone: 30 },
+      { sel: '.sidebar-left', zone: 20 }
+    ];
+    pairs.forEach(function (p) {
+      var el = document.querySelector(p.sel);
+      if (!el) return;
+      el.addEventListener('mousemove', function (e) {
+        var rect = el.getBoundingClientRect();
+        var near = rect.right - e.clientX <= p.zone;
+        el.classList.toggle('scrollbar-hover', near);
+      });
+      el.addEventListener('mouseleave', function () {
+        el.classList.remove('scrollbar-hover');
+      });
+    });
+  }
+
   /* ── Init ──────────────────────────────────────────────── */
 
   document.addEventListener('DOMContentLoaded', function () {
@@ -470,6 +501,7 @@
     initSpaClickHandler();
     initPdfViewer();
     initVscodeOpen();
+    initScrollbarHover();
   });
 
 }());

@@ -7,7 +7,7 @@ Static doc generator: `.md` files + Python AST parsing -> 3-column HTML site wit
 ```bash
 slop-doc init [--name docs]       # scaffold docs/ with root.md
 slop-doc build [-d docs]          # build HTML site
-slop-doc open [-d docs] [-p 8000] # serve + open in browser
+slop-doc start [-d docs] [-p 8000] [-o] # build + serve + live reload (-o to open browser)
 ```
 
 ## Docs Folder = Nav Tree
@@ -52,7 +52,7 @@ JSON block at top of `.md` file. Supports `//` comments, trailing commas, unquot
 | `exclude_dirs` | `[]` | Folder names to skip when scanning docs |
 | `max_search_results` | `12` | Search dropdown limit |
 | `default_collapsed` | `false` | Nav tree starts collapsed on first visit |
-| `port` | `8000` | Default port for `slop-doc open` |
+| `port` | `8000` | Default port for `slop-doc start` |
 
 ### Example root.md
 

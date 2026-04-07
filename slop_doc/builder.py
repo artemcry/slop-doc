@@ -458,7 +458,7 @@ _LIVERELOAD_SCRIPT = b"""<script>
 </script>"""
 
 
-def _cmd_open(docs_root: str, port: int = 8000) -> int:
+def _cmd_start(docs_root: str, port: int = 8000, open_browser: bool = False) -> int:
     """Build, serve, watch for changes and live-reload the browser."""
     import threading
     import webbrowser
@@ -570,7 +570,8 @@ def _cmd_open(docs_root: str, port: int = 8000) -> int:
 
     url = f'http://127.0.0.1:{p}'
     print(f"Serving at {url}  (Ctrl+C to stop)")
-    webbrowser.open(url)
+    if open_browser:
+        webbrowser.open(url)
 
     try:
         server.serve_forever()
@@ -599,10 +600,11 @@ def main() -> int:
     p_build = subparsers.add_parser('build', help='Build documentation')
     p_build.add_argument('-d', '--dir', default=None, metavar='DIR', help='Docs folder containing root.md')
 
-    # open
-    p_open = subparsers.add_parser('open', help='Serve docs locally and open in browser')
-    p_open.add_argument('-d', '--dir', default=None, metavar='DIR', help='Docs folder containing root.md')
-    p_open.add_argument('-p', '--port', default=8000, type=int, metavar='PORT', help='HTTP port (default: 8000)')
+    # start
+    p_start = subparsers.add_parser('start', help='Build, serve with live reload, and watch for changes')
+    p_start.add_argument('-d', '--dir', default=None, metavar='DIR', help='Docs folder containing root.md')
+    p_start.add_argument('-p', '--port', default=8000, type=int, metavar='PORT', help='HTTP port (default: 8000)')
+    p_start.add_argument('-o', '--open', action='store_true', help='Open browser automatically')
 
     args = parser.parse_args()
 
@@ -615,9 +617,9 @@ def main() -> int:
             build_docs(docs_root)
             return 0
 
-        if args.command == 'open':
+        if args.command == 'start':
             docs_root = _find_docs_root(args.dir)
-            return _cmd_open(docs_root, port=args.port)
+            return _cmd_start(docs_root, port=args.port, open_browser=args.open)
 
     except BuildError as e:
         print(f"Error: {e}", file=sys.stderr)

@@ -375,7 +375,7 @@ def assemble_page(
     <span class="project-name">{project_name}</span>
     <div class="breadcrumb">{breadcrumb_html}</div>
     <div class="search">
-      <input type="text" placeholder="Search..." id="search-input">
+      <input type="text" placeholder="Search..." id="search-input" autocomplete="off">
     </div>
   </header>
   <div class="layout">

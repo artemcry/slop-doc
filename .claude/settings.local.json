@@ -17,7 +17,8 @@
       "Bash(python -m slop_doc.builder build -d /d/Projects/scalar-parallax/documentation/docs-web)",
       "Read(//d/Projects/scalar-parallax/documentation/docs-web/**)",
       "Bash(python -m slop_doc.builder build -d .)",
-      "Bash(python -c \"from slop_doc.builder import build_docs; build_docs\\('.'\\)\")"
+      "Bash(python -c \"from slop_doc.builder import build_docs; build_docs\\('.'\\)\")",
+      "Bash(python -m pytest tests/ -q)"
     ],
     "defaultMode": "bypassPermissions"
   }
