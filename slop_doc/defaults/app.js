@@ -446,11 +446,9 @@
       var url = viewer.dataset.pdfUrl + '#toolbar=0&navpanes=0&scrollbar=1&view=FitH';
       var iframe = document.createElement('iframe');
       iframe.src = url;
-      iframe.style.cssText = 'width:140%;border:none;display:block;margin-left:-7.5%;';
+      iframe.style.cssText = 'width:100%;border:none;display:block;height:73vh;max-height:800px;border-radius:6px;';
       viewer.innerHTML = '';
       viewer.appendChild(iframe);
-
-      iframe.style.height = '95vh';
     });
   }
 
