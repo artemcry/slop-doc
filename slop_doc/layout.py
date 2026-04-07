@@ -18,9 +18,17 @@ def _assets_prefix(output_path: str) -> str:
 
 def _relative_url(from_path: str, to_path: str) -> str:
     """Compute a relative URL from from_path to to_path (both relative to output root)."""
-    from_dir = posixpath.dirname(from_path)
-    rel = posixpath.relpath(to_path, from_dir) if from_dir else to_path
-    return rel.replace('\\', '/')
+    # Strip #anchor from both paths before computing relative path
+    from_base = from_path.split('#')[0]
+    anchor = ''
+    if '#' in to_path:
+        to_base, anchor = to_path.split('#', 1)
+        anchor = '#' + anchor
+    else:
+        to_base = to_path
+    from_dir = posixpath.dirname(from_base)
+    rel = posixpath.relpath(to_base, from_dir) if from_dir else to_base
+    return rel.replace('\\', '/') + anchor
 
 
 class LayoutError(Exception):
@@ -87,7 +95,10 @@ def _generate_nav_node(node: Node, current_path: str | None, page_path: str | No
         classes.append('expanded' if children_expanded else 'collapsed')
 
     classes_str = ' '.join(classes)
-    html = f'<li class="{classes_str}">\n'
+    # Stable ID for localStorage nav state persistence
+    nav_id = (node.output_path or node.title or '').split('#')[0]
+    nav_attr = f' data-nav-id="{nav_id}"' if has_children else ''
+    html = f'<li class="{classes_str}"{nav_attr}>\n'
 
     if is_container or not node.output_path:
         # Container node — not a clickable link
@@ -113,8 +124,11 @@ def _generate_nav_node(node: Node, current_path: str | None, page_path: str | No
 
 def _is_ancestor(ancestor: Node, descendant_path: str) -> bool:
     """Check if ancestor contains a node with descendant_path anywhere in its subtree."""
+    # Strip #anchor for comparison (function nodes have page.html#func anchors)
+    desc_base = descendant_path.split('#')[0]
     for child in ancestor.children:
-        if child.output_path == descendant_path:
+        child_base = child.output_path.split('#')[0] if child.output_path else ''
+        if child_base == desc_base or child.output_path == descendant_path:
             return True
         if _is_ancestor(child, descendant_path):
             return True
@@ -205,14 +219,12 @@ def generate_contents_sidebar(html_content: str) -> str:
 def generate_search_index(
     tree: list[Node],
     source_data_by_folder: dict[str, any],
-    hidden_nodes: list[Node] | None = None,
 ) -> str:
     """Generate search index JSON.
 
     Args:
         tree: The navigation tree.
         source_data_by_folder: Dict of source data by folder.
-        hidden_nodes: Auto-class nodes not in the nav tree (still searchable).
 
     Returns:
         JSON string for the search index.
@@ -221,12 +233,9 @@ def generate_search_index(
     processed_sources = set()
 
     # Build a mapping from class name -> detail page URL
-    # by scanning all nodes and looking for class detail pages
     class_page_urls = {}
-    folder_page_urls = {}
 
     def scan_for_class_pages(node: Node):
-        # Auto-generated class pages have auto_class set
         auto_class = getattr(node, 'auto_class', None)
         if auto_class and node.output_path:
             class_page_urls[auto_class] = node.output_path
@@ -236,12 +245,28 @@ def generate_search_index(
     for node in tree:
         scan_for_class_pages(node)
 
-    # Also register hidden nodes in the class page URL map
-    for node in (hidden_nodes or []):
-        if node.auto_class and node.output_path:
-            class_page_urls.setdefault(node.auto_class, node.output_path)
+    # Build function URL map from function-link nav nodes in the tree
+    import os as _os
+    func_page_urls: dict[str, str] = {}  # func_name → "page.html#func_name"
+
+    def scan_for_func_pages(node: Node):
+        auto_fn = getattr(node, 'auto_function', None)
+        if auto_fn and node.output_path:
+            # output_path is already "parent/file.html#func_name"
+            func_page_urls.setdefault(auto_fn, node.output_path)
+        for child in node.children:
+            scan_for_func_pages(child)
+
+    for node in tree:
+        scan_for_func_pages(node)
 
     def process_node(node: Node):
+        # Skip function-link nav nodes (nav-only, no page entry)
+        if getattr(node, 'auto_function', None):
+            for child in node.children:
+                process_node(child)
+            return
+
         entry = {
             'title': node.title,
             'url': node.output_path,
@@ -273,9 +298,10 @@ def generate_search_index(
 
                 # Add module-level functions
                 for func in source_data.functions:
+                    func_url = func_page_urls.get(func.name, node.output_path)
                     index.append({
                         'title': func.name,
-                        'url': node.output_path,
+                        'url': func_url,
                         'type': 'function'
                     })
 

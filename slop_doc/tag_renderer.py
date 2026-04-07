@@ -222,7 +222,7 @@ def _dispatch_presentation(
 
     if func_name == 'class_info':
         cls = _require_class(args, source_data)
-        return _render_class_info(cls)
+        return _render_class_info(cls, source_data, folder_slug)
 
     if func_name == 'properties':
         cls = _require_class(args, source_data)
@@ -313,7 +313,7 @@ def _parse_class_and_option(args: list[str], default_option: str) -> tuple[str, 
 
 def _render_classes_table(source_data: SourceData, names: list[str], folder_slug: str) -> str:
     if not names:
-        return "<p>No classes found.</p>"
+        return ""
 
     cls_map = {c.name: c for c in source_data.classes}
     rows = []
@@ -332,7 +332,7 @@ def _render_classes_table(source_data: SourceData, names: list[str], folder_slug
 
 def _render_functions_table(source_data: SourceData, names: list[str]) -> str:
     if not names:
-        return "<p>No functions found.</p>"
+        return ""
 
     func_map = {f.name: f for f in source_data.functions}
     rows = []
@@ -355,7 +355,7 @@ def _render_functions_table(source_data: SourceData, names: list[str]) -> str:
 
 def _render_constants_table(source_data: SourceData, names: list[str]) -> str:
     if not names:
-        return "<p>No constants found.</p>"
+        return ""
 
     const_map = {c.name: c for c in source_data.constants}
     rows = []
@@ -373,21 +373,35 @@ def _render_constants_table(source_data: SourceData, names: list[str]) -> str:
     )
 
 
-def _render_class_info(class_data: ClassData) -> str:
+def _render_class_info(class_data: ClassData, source_data: SourceData | None = None, folder_slug: str = "") -> str:
     rel_file = os.path.relpath(class_data.source_file).replace('\\', '/')
     module_name = os.path.splitext(os.path.basename(class_data.source_file))[0]
+
+    # Render base classes with cross-links for project classes
+    if class_data.base_classes:
+        existing_names = {cls.name for cls in source_data.classes} if source_data else set()
+        parts = []
+        for bc in class_data.base_classes:
+            if bc in existing_names and folder_slug:
+                parts.append(f"[[{folder_slug}/{bc}]]")
+            else:
+                parts.append(bc)
+        inherits_str = ', '.join(parts)
+    else:
+        inherits_str = '(none)'
+
     return (
         "<table class='class-info'>\n"
         f"<tr><td>Module:</td><td>{module_name}</td></tr>\n"
         f"<tr><td>File:</td><td>{rel_file}:{class_data.source_line}</td></tr>\n"
-        f"<tr><td>Inherits:</td><td>{', '.join(class_data.base_classes) if class_data.base_classes else '(none)'}</td></tr>\n"
+        f"<tr><td>Inherits:</td><td>{inherits_str}</td></tr>\n"
         "</table>"
     )
 
 
 def _render_properties(class_data: ClassData) -> str:
     if not class_data.properties:
-        return "<p>No properties.</p>"
+        return ""
 
     rows = []
     for prop in class_data.properties:
@@ -409,7 +423,7 @@ def _render_methods_summary(
 ) -> str:
     methods = _filter_methods(class_data, method_type)
     if not methods:
-        return "<p>No methods.</p>"
+        return ""
 
     rows = []
     for method in methods:
@@ -428,7 +442,7 @@ def _render_methods_summary(
 def _render_methods_details(class_data: ClassData, source_data: SourceData, folder_slug: str) -> str:
     methods = _filter_methods(class_data, 'public') + _filter_methods(class_data, 'private')
     if not methods:
-        return "<p>No methods.</p>"
+        return ""
 
     parts = []
     for method in methods:
@@ -438,7 +452,7 @@ def _render_methods_details(class_data: ClassData, source_data: SourceData, fold
             if arg.name == 'self':
                 continue
             if arg.type:
-                type_str = _link_type_if_class(arg.type, source_data, folder_slug)
+                type_str = link_type_if_class(arg.type, source_data, folder_slug)
                 params_parts.append(f"{arg.name}: {type_str}")
             else:
                 params_parts.append(arg.name)
@@ -466,18 +480,18 @@ def _render_methods_details(class_data: ClassData, source_data: SourceData, fold
             ret_type = method.returns.type or method.return_type or ""
             ret_desc = method.returns.description or ""
             if ret_type:
-                type_str = _link_type_if_class(ret_type, source_data, folder_slug)
+                type_str = link_type_if_class(ret_type, source_data, folder_slug)
                 html += f'<h4>Returns</h4>\n<div class="returns-block"><code>{type_str}</code> — {ret_desc}</div>\n'
             else:
                 html += f'<h4>Returns</h4>\n<div class="returns-block">{ret_desc}</div>\n'
         elif method.return_type and method.return_type not in ('None', 'none'):
-            type_str = _link_type_if_class(method.return_type, source_data, folder_slug)
+            type_str = link_type_if_class(method.return_type, source_data, folder_slug)
             html += f'<h4>Returns</h4>\n<div class="returns-block"><code>{type_str}</code></div>\n'
 
         if method.raises:
             html += '<h4>Raises</h4>\n<dl class="raises-list">\n'
             for raise_doc in method.raises:
-                type_str = _link_type_if_class(raise_doc.type, source_data, folder_slug)
+                type_str = link_type_if_class(raise_doc.type, source_data, folder_slug)
                 html += f'<dd><code>{type_str}</code> — {raise_doc.description}</dd>\n'
             html += '</dl>\n'
 
@@ -485,6 +499,62 @@ def _render_methods_details(class_data: ClassData, source_data: SourceData, fold
         parts.append(html)
 
     return '\n'.join(parts)
+
+
+def render_function_detail(func: FunctionData, source_data: SourceData | None, folder_slug: str) -> str:
+    """Render a single function's full detail block (like a method detail but for standalone functions)."""
+    params_parts = []
+    for arg in func.args:
+        if arg.type:
+            type_str = link_type_if_class(arg.type, source_data, folder_slug)
+            params_parts.append(f"{arg.name}: {type_str}")
+        else:
+            params_parts.append(arg.name)
+    params_str = ", ".join(params_parts)
+
+    html = f'<div class="method-detail">\n'
+    html += f'<h3 id="{func.name}"><span class="method-name">{func.name}</span>'
+    html += f'<span class="method-params">({params_str})</span>'
+    if func.return_type:
+        ret_type = link_type_if_class(func.return_type, source_data, folder_slug)
+        html += f' <span class="method-return">-&gt; {ret_type}</span>'
+    html += '</h3>\n'
+    html += '<div class="method-body">\n'
+
+    if func.short_description:
+        html += f'{markdown_to_html(func.short_description)}\n'
+    if func.full_description and func.full_description != func.short_description:
+        full_desc_stripped = '\n'.join(line.lstrip() for line in func.full_description.split('\n'))
+        html += f'{markdown_to_html(full_desc_stripped)}\n'
+
+    if func.parameters:
+        html += '<h4>Parameters</h4>\n<dl class="params-list">\n'
+        for param in func.parameters:
+            opt = " <em>(optional)</em>" if param.is_optional else ""
+            html += f'<dd><code>{param.name}</code> — {param.description}{opt}</dd>\n'
+        html += '</dl>\n'
+
+    if func.returns:
+        ret_type = func.returns.type or func.return_type or ""
+        ret_desc = func.returns.description or ""
+        if ret_type:
+            type_str = link_type_if_class(ret_type, source_data, folder_slug)
+            html += f'<h4>Returns</h4>\n<div class="returns-block"><code>{type_str}</code> — {ret_desc}</div>\n'
+        else:
+            html += f'<h4>Returns</h4>\n<div class="returns-block">{ret_desc}</div>\n'
+    elif func.return_type and func.return_type not in ('None', 'none'):
+        type_str = link_type_if_class(func.return_type, source_data, folder_slug)
+        html += f'<h4>Returns</h4>\n<div class="returns-block"><code>{type_str}</code></div>\n'
+
+    if func.raises:
+        html += '<h4>Raises</h4>\n<dl class="raises-list">\n'
+        for raise_doc in func.raises:
+            type_str = link_type_if_class(raise_doc.type, source_data, folder_slug)
+            html += f'<dd><code>{type_str}</code> — {raise_doc.description}</dd>\n'
+        html += '</dl>\n'
+
+    html += '</div>\n</div>\n'
+    return html
 
 
 # ---------------------------------------------------------------------------
@@ -528,7 +598,7 @@ def _render_function_signature(func: FunctionData, source_data: SourceData | Non
             continue
         arg_str = arg.name
         if arg.type:
-            type_str = _link_type_if_class(arg.type, source_data, folder_slug)
+            type_str = link_type_if_class(arg.type, source_data, folder_slug)
             arg_str = f"{arg_str}: {type_str}"
         if arg.default:
             arg_str = f"{arg_str}={arg.default}"
@@ -536,12 +606,12 @@ def _render_function_signature(func: FunctionData, source_data: SourceData | Non
 
     sig = f"{func.name}({', '.join(args)})"
     if func.return_type:
-        type_str = _link_type_if_class(func.return_type, source_data, folder_slug)
+        type_str = link_type_if_class(func.return_type, source_data, folder_slug)
         sig = f"{sig} -> {type_str}"
     return sig
 
 
-def _link_type_if_class(type_str: str, source_data: SourceData | None, folder_slug: str) -> str:
+def link_type_if_class(type_str: str, source_data: SourceData | None, folder_slug: str) -> str:
     if not source_data or not folder_slug:
         return type_str
 

@@ -19,6 +19,7 @@ import argparse
 import importlib.resources
 import json
 import os
+import re
 import shutil
 import sys
 
@@ -28,6 +29,8 @@ from slop_doc.tree_builder import (
 from slop_doc.tag_renderer import (
     render_data_tags_inline,
     render_presentation_functions,
+    render_function_detail,
+    link_type_if_class,
     TagRendererError,
 )
 from slop_doc.parser import SourceData
@@ -138,80 +141,65 @@ def _generate_auto_class_content(class_name: str) -> str:
 """
 
 
-def _generate_auto_function_content(func_name: str) -> str:
-    """Generate Markdown body for an auto-generated function page."""
-    return f"# {func_name}\n\n*(auto-generated function page)*\n"
+def _generate_auto_file_functions_content(
+    module_name: str,
+    source_data: SourceData,
+    folder_slug: str,
+) -> str:
+    """Generate HTML content for a file-functions page (all functions from one .py file)."""
+    funcs = [f for f in source_data.functions if
+             os.path.splitext(os.path.basename(f.source_file))[0] == module_name]
+    if not funcs:
+        return f"<h1>Module: {module_name}</h1>\n<p>No functions found.</p>"
+
+    parts = [f"<h1>Module: {module_name}</h1>\n"]
+
+    # Summary table (name is a link, types are cross-linked)
+    rows = []
+    for func in funcs:
+        sig_parts = []
+        for arg in func.args:
+            s = arg.name
+            if arg.type:
+                s += f": {link_type_if_class(arg.type, source_data, folder_slug)}"
+            if arg.default:
+                s += f"={arg.default}"
+            sig_parts.append(s)
+        params_str = ', '.join(sig_parts)
+        ret_str = f" -&gt; {link_type_if_class(func.return_type, source_data, folder_slug)}" if func.return_type else ""
+        desc = func.short_description or "No description"
+        rows.append(
+            f'<tr><td><a href="#{func.name}">{func.name}</a>'
+            f'<code>({params_str}){ret_str}</code></td><td>{desc}</td></tr>'
+        )
+
+    parts.append(
+        "<table class='functions-table'>\n"
+        "<thead><tr><th>Function</th><th>Description</th></tr></thead>\n"
+        f"<tbody>\n{''.join(rows)}\n</tbody>\n</table>\n"
+    )
+
+    # Detail blocks
+    parts.append("<h2>Function Details</h2>\n")
+    for func in funcs:
+        parts.append(render_function_detail(func, source_data, folder_slug))
+
+    return '\n'.join(parts)
 
 
 # ---------------------------------------------------------------------------
-# Hidden class pages  (auto-generated for cross-link targets not in nav tree)
+# Empty section removal
 # ---------------------------------------------------------------------------
 
-def _create_hidden_class_nodes(
-    root_node: Node,
-    tree: list[Node],
-    source_data_by_folder: dict[str, SourceData],
-) -> list[Node]:
-    """Create auto-class nodes for classes that don't have explicit pages in the tree.
+_EMPTY_SECTION_RE = re.compile(
+    r'^(#{1,6}\s+[^\n]+)\n+(?=#{1,6}\s|\Z)',
+    re.MULTILINE,
+)
 
-    These "hidden" nodes get rendered as full class pages and indexed for cross-links,
-    but are NOT added to the navigation tree.
 
-    Returns:
-        List of hidden Node objects.
-    """
-    from slop_doc.tree_builder import slugify
-
-    # Collect classes that already have dedicated pages
-    existing: dict[str, set[str]] = {}  # source_path → {class_name, ...}
-    # Also collect the output prefix per source (derived from existing auto_class siblings)
-    source_prefix: dict[str, str] = {}  # source_path → output prefix
-
-    all_nodes = _iterate_nodes(tree)
-
-    for node in all_nodes:
-        if node.is_auto and node.auto_class and node.source:
-            existing.setdefault(node.source, set()).add(node.auto_class)
-            # Derive prefix: "prefix/classname.html" → "prefix"
-            if node.source not in source_prefix:
-                parts = node.output_path.rsplit('/', 1)
-                source_prefix[node.source] = parts[0] if len(parts) > 1 else ""
-
-    # For sources without any auto_class nodes, find prefix from folder/page nodes.
-    # Prefer folder nodes (index.html) over regular pages; check root node too.
-    nodes_to_check = [root_node] + all_nodes
-    for node in nodes_to_check:
-        if node.source and node.source not in source_prefix and not node.is_auto:
-            if node.output_path.endswith('/index.html'):
-                source_prefix[node.source] = node.output_path.replace('/index.html', '')
-            elif not node.output_path or node.output_path == '':
-                # Root node — hidden pages go under a folder named after the source
-                source_prefix[node.source] = slugify(os.path.basename(node.source.rstrip('/\\')))
-            elif node.output_path.endswith('.html'):
-                # Regular page — use a folder named after the source to avoid conflicts
-                source_prefix[node.source] = slugify(os.path.basename(node.source.rstrip('/\\')))
-
-    hidden: list[Node] = []
-    for source, source_data in source_data_by_folder.items():
-        prefix = source_prefix.get(source)
-        if prefix is None:
-            continue
-
-        existing_names = existing.get(source, set())
-        for cls in source_data.classes:
-            if cls.name not in existing_names:
-                slug = slugify(cls.name)
-                output = f"{prefix}/{slug}.html" if prefix else f"{slug}.html"
-                hidden.append(Node(
-                    title=cls.name,
-                    content="",
-                    source=source,
-                    output_path=output,
-                    is_auto=True,
-                    auto_class=cls.name,
-                ))
-
-    return hidden
+def _strip_empty_sections(text: str) -> str:
+    """Remove Markdown headings that have no content before the next heading or EOF."""
+    return _EMPTY_SECTION_RE.sub('', text)
 
 
 # ---------------------------------------------------------------------------
@@ -246,14 +234,11 @@ def build_docs(docs_root: str) -> None:
         root_node, source_data_by_folder = build_tree_with_root(docs_root, exclude_dirs={output_dir_name})
         tree = root_node.children  # top-level nav tree
 
-        # --- Step 1b: Create hidden class pages (not in nav, but indexed & rendered) ---
-        hidden_nodes = _create_hidden_class_nodes(root_node, tree, source_data_by_folder)
-
         # --- Step 2: Build cross-link index ---
-        index = build_index(tree, source_data_by_folder, hidden_nodes=hidden_nodes)
+        index = build_index(tree, source_data_by_folder)
 
         # --- Step 3: Search index ---
-        search_index = generate_search_index(tree, source_data_by_folder, hidden_nodes=hidden_nodes)
+        search_index = generate_search_index(tree, source_data_by_folder)
 
         # --- Step 4: Build index.html from root.md content ---
         if root_node.content:
@@ -265,15 +250,53 @@ def build_docs(docs_root: str) -> None:
 
         # --- Step 5: Build all pages ---
         pages_built = 0
-        all_nodes = _iterate_nodes(tree) + hidden_nodes
+        all_nodes = _iterate_nodes(tree)
+        generated_file_pages: set[str] = set()
+
         for node in all_nodes:
             body = node.content
+            raw_html = False
 
-            # Auto-generated pages
+            # Function-link nav node → generate the file-function page it points to (once)
+            if node.is_auto and node.auto_function:
+                file_output_path = node.output_path.split('#')[0]
+                if file_output_path not in generated_file_pages:
+                    generated_file_pages.add(file_output_path)
+                    source_data = source_data_by_folder.get(node.source)
+                    if source_data and node.auto_source_file:
+                        folder_slug = os.path.basename(node.source.rstrip('/\\'))
+                        body = _generate_auto_file_functions_content(
+                            node.auto_source_file, source_data, folder_slug
+                        )
+                        file_page_node = Node(
+                            title=node.auto_source_file,
+                            source=node.source,
+                            output_path=file_output_path,
+                            is_auto=True,
+                            auto_source_file=node.auto_source_file,
+                        )
+                        _build_page(
+                            file_page_node, body, tree, index,
+                            project_name, version, search_index, output_dir,
+                            source_data_by_folder, is_raw_html=True,
+                        )
+                        pages_built += 1
+                continue
+
+            # Auto-generated class page
             if node.is_auto and node.auto_class:
                 body = _generate_auto_class_content(node.auto_class)
-            elif node.is_auto and node.auto_function:
-                body = _generate_auto_function_content(node.auto_function)
+            # Auto file-function page (if created directly in tree)
+            elif node.is_auto and node.auto_source_file:
+                source_data = source_data_by_folder.get(node.source)
+                if source_data:
+                    folder_slug = os.path.basename(node.source.rstrip('/\\')) if node.source else ''
+                    body = _generate_auto_file_functions_content(
+                        node.auto_source_file, source_data, folder_slug
+                    )
+                    raw_html = True
+                else:
+                    body = f"# {node.auto_source_file}\n\n*No source data.*\n"
 
             if not body and not node.children:
                 continue  # skip empty container nodes without content
@@ -286,6 +309,7 @@ def build_docs(docs_root: str) -> None:
                 node, body, tree, index,
                 project_name, version, search_index, output_dir,
                 source_data_by_folder,
+                is_raw_html=raw_html,
             )
             pages_built += 1
 
@@ -309,6 +333,7 @@ def _build_page(
     output_dir: str,
     source_data_by_folder: dict,
     is_index: bool = False,
+    is_raw_html: bool = False,
 ) -> None:
     """Render and write a single page."""
     # Get source data for this node
@@ -322,14 +347,21 @@ def _build_page(
         folder_slug = os.path.basename(node.source.rstrip('/\\'))
 
     try:
-        # Render %presentation()% functions first (they expand {{tags}} in their own args)
-        rendered = render_presentation_functions(body, source_data, folder_slug, node.output_path)
+        if is_raw_html:
+            # Body is already HTML (e.g. file-function pages) — skip tag/Markdown processing
+            html_content = body
+        else:
+            # Render %presentation()% functions first (they expand {{tags}} in their own args)
+            rendered = render_presentation_functions(body, source_data, folder_slug, node.output_path)
 
-        # Render remaining {{data}} tags inline (bare tags not inside %...%)
-        rendered = render_data_tags_inline(rendered, source_data, folder_slug)
+            # Render remaining {{data}} tags inline (bare tags not inside %...%)
+            rendered = render_data_tags_inline(rendered, source_data, folder_slug)
 
-        # Markdown → HTML
-        html_content = markdown_to_html(rendered)
+            # Strip empty sections (heading followed by nothing before next heading or EOF)
+            rendered = _strip_empty_sections(rendered)
+
+            # Markdown → HTML
+            html_content = markdown_to_html(rendered)
 
         # Resolve [[cross-links]]
         html_content = resolve_links(html_content, index, node.output_path)

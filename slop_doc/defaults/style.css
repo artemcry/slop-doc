@@ -75,7 +75,9 @@ header {
 /* ── Left nav ────────────────────────────────────────────── */
 
 .sidebar-left {
-  width: 240px;
+  min-width: 240px;
+  width: max-content;
+  max-width: 360px;
   flex-shrink: 0;
   background: #222;
   border-right: 1px solid #383838;
@@ -83,6 +85,34 @@ header {
   top: 48px; bottom: 0; left: 0;
   overflow-y: auto;
   padding: 12px 0;
+}
+
+/* Scrollbar — thin, show on hover */
+.sidebar-left,
+.sidebar-right {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+.sidebar-left:hover,
+.sidebar-right:hover {
+  scrollbar-color: rgba(255,255,255,.15) transparent;
+}
+.sidebar-left::-webkit-scrollbar,
+.sidebar-right::-webkit-scrollbar {
+  width: 6px;
+}
+.sidebar-left::-webkit-scrollbar-track,
+.sidebar-right::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sidebar-left::-webkit-scrollbar-thumb,
+.sidebar-right::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 3px;
+}
+.sidebar-left:hover::-webkit-scrollbar-thumb,
+.sidebar-right:hover::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,.15);
 }
 
 .nav-tree {
@@ -108,16 +138,7 @@ header {
   list-style: none;
   padding: 0;
   margin: 0;
-}
-
-.nav-children li > a,
-.nav-children li > .nav-label {
-  padding-left: 32px;
-}
-
-.nav-children .nav-children li > a,
-.nav-children .nav-children li > .nav-label {
-  padding-left: 48px;
+  padding-left: 16px;
 }
 
 .nav-tree a,
@@ -129,6 +150,7 @@ header {
   color: #999;
   text-decoration: none;
   font-size: 13px;
+  white-space: nowrap;
   border-left: 3px solid transparent;
   transition: background .12s, color .12s;
 }
@@ -208,7 +230,7 @@ header {
 .content {
   flex: 1;
   padding: 32px 40px 60px;
-  margin-left: 240px;
+  margin-left: var(--sidebar-w, 240px);
   margin-right: 220px;
   min-width: 0;
   max-width: 960px;

@@ -97,23 +97,65 @@
     onScroll();
   });
 
-  // Nav tree toggle (expand/collapse children without navigating)
+  // Nav tree toggle with localStorage persistence (uses data-nav-id from server)
   document.addEventListener('DOMContentLoaded', function () {
-    var toggles = document.querySelectorAll('.nav-toggle');
-    toggles.forEach(function (toggle) {
+    var STORAGE_KEY = 'nav-expanded';
+
+    function loadState() {
+      try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; }
+      catch (e) { return {}; }
+    }
+
+    function saveState(obj) {
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(obj)); } catch (e) {}
+    }
+
+    function setExpanded(li, expanded) {
+      li.classList.toggle('expanded', expanded);
+      li.classList.toggle('collapsed', !expanded);
+      // Direct child <ul class="nav-children">
+      for (var i = 0; i < li.children.length; i++) {
+        var ch = li.children[i];
+        if (ch.classList && ch.classList.contains('nav-children')) {
+          ch.classList.toggle('expanded', expanded);
+          ch.classList.toggle('collapsed', !expanded);
+          break;
+        }
+      }
+    }
+
+    // Restore saved expand/collapse state — overrides server-rendered classes
+    var saved = loadState();
+    var nodes = document.querySelectorAll('[data-nav-id]');
+    nodes.forEach(function (li) {
+      var id = li.getAttribute('data-nav-id');
+      if (id in saved) {
+        setExpanded(li, saved[id]);
+      }
+    });
+
+    // Toggle handler
+    document.querySelectorAll('.nav-toggle').forEach(function (toggle) {
       toggle.addEventListener('click', function (e) {
         e.stopPropagation();
-        var li = toggle.closest('.has-children');
-        if (li) {
-          li.classList.toggle('expanded');
-          li.classList.toggle('collapsed');
-          var childList = li.querySelector('.nav-children');
-          if (childList) {
-            childList.classList.toggle('expanded');
-            childList.classList.toggle('collapsed');
-          }
-        }
+        var li = toggle.closest('[data-nav-id]');
+        if (!li) return;
+        var nowExpanded = !li.classList.contains('expanded');
+        setExpanded(li, nowExpanded);
+        var state = loadState();
+        state[li.getAttribute('data-nav-id')] = nowExpanded;
+        saveState(state);
       });
     });
   });
+
+  // Sync sidebar width → CSS variable so .content margin follows
+  document.addEventListener('DOMContentLoaded', function () {
+    var sidebar = document.querySelector('.sidebar-left');
+    if (!sidebar || typeof ResizeObserver === 'undefined') return;
+    new ResizeObserver(function () {
+      document.documentElement.style.setProperty('--sidebar-w', sidebar.offsetWidth + 'px');
+    }).observe(sidebar);
+  });
+
 }());

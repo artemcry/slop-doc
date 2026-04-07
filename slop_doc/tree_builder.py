@@ -38,6 +38,7 @@ class Node:
     is_auto: bool = False         # True if auto-generated (class/function page)
     auto_class: str | None = None # class name for auto-generated class pages
     auto_function: str | None = None  # function name for auto-generated function pages
+    auto_source_file: str | None = None  # source file basename (no ext) for file-function pages
     meta: PageMeta = field(default_factory=PageMeta)
 
 
@@ -325,6 +326,29 @@ def _expand_children(
         # All class-like types generate auto_class nodes
         CLASS_TYPES = {'classes', 'enums', 'dataclasses', 'interfaces', 'protocols', 'exceptions', 'plain_classes'}
 
+        if child_type == 'functions':
+            # Individual function nodes in the nav tree, each linking to
+            # the file-function page with an anchor: file-page.html#func_name
+            func_map = {f.name: f for f in source_data.functions}
+            for name in names:
+                func = func_map.get(name)
+                if func and func.source_file:
+                    file_base = os.path.splitext(os.path.basename(func.source_file))[0]
+                else:
+                    file_base = '_unknown'
+                file_slug = slugify(file_base)
+                child = Node(
+                    title=name,
+                    content="",
+                    source=effective_source,
+                    output_path=f"{parent_prefix}/{file_slug}.html#{name}",
+                    is_auto=True,
+                    auto_function=name,
+                    auto_source_file=file_base,
+                )
+                parent_node.children.append(child)
+            continue
+
         for name in names:
             slug = slugify(name)
 
@@ -336,15 +360,6 @@ def _expand_children(
                     output_path=f"{parent_prefix}/{slug}.html",
                     is_auto=True,
                     auto_class=name,
-                )
-            elif child_type == 'functions':
-                child = Node(
-                    title=f"{name}",
-                    content="",
-                    source=effective_source,
-                    output_path=f"{parent_prefix}/{slug}.html",
-                    is_auto=True,
-                    auto_function=name,
                 )
             else:
                 continue
