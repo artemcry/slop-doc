@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "slop-doc"
-version = "0.1.4"
+version = "1.0"
 description = "Static documentation generator for Python projects"
 readme = "README.md"
 authors = [{name = "Ar4o"}]

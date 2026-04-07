@@ -163,9 +163,10 @@
       window.scrollTo(0, 0);
     }
 
-    // Re-init scroll spy
+    // Re-init scroll spy and PDF viewer
     initScrollSpy();
     initInlineScrollSpy();
+    initPdfViewer();
   }
 
   /** Restore nav expand/collapse state from localStorage after nav replacement. */
@@ -406,6 +407,25 @@
     });
   }
 
+  /* ── PDF Viewer (iframe, no toolbar) ────────────────────── */
+
+  function initPdfViewer() {
+    var viewers = document.querySelectorAll('.pdf-viewer[data-pdf-url]');
+    if (!viewers.length) return;
+
+    viewers.forEach(function (viewer) {
+      if (viewer.querySelector('iframe')) return; // already initialized
+      var url = viewer.dataset.pdfUrl + '#toolbar=0&navpanes=0&scrollbar=1&view=FitH';
+      var iframe = document.createElement('iframe');
+      iframe.src = url;
+      iframe.style.cssText = 'width:140%;border:none;display:block;margin-left:-7.5%;';
+      viewer.innerHTML = '';
+      viewer.appendChild(iframe);
+
+      iframe.style.height = '95vh';
+    });
+  }
+
   /* ── Init ──────────────────────────────────────────────── */
 
   document.addEventListener('DOMContentLoaded', function () {
@@ -415,6 +435,7 @@
     restoreNavState();
     initSidebarSync();
     initSpaClickHandler();
+    initPdfViewer();
   });
 
 }());

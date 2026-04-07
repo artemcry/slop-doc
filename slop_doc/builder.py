@@ -245,7 +245,7 @@ def build_docs(docs_root: str) -> None:
             _build_page(
                 root_node, root_node.content, tree, index,
                 project_name, version, search_index, output_dir,
-                source_data_by_folder, is_index=True,
+                source_data_by_folder, is_index=True, docs_root=docs_root,
             )
 
         # --- Step 5: Build all pages ---
@@ -278,7 +278,7 @@ def build_docs(docs_root: str) -> None:
                         _build_page(
                             file_page_node, body, tree, index,
                             project_name, version, search_index, output_dir,
-                            source_data_by_folder, is_raw_html=True,
+                            source_data_by_folder, is_raw_html=True, docs_root=docs_root,
                         )
                         pages_built += 1
                 continue
@@ -309,7 +309,7 @@ def build_docs(docs_root: str) -> None:
                 node, body, tree, index,
                 project_name, version, search_index, output_dir,
                 source_data_by_folder,
-                is_raw_html=raw_html,
+                is_raw_html=raw_html, docs_root=docs_root,
             )
             pages_built += 1
 
@@ -320,6 +320,9 @@ def build_docs(docs_root: str) -> None:
 
     except TreeBuilderError as e:
         raise BuildError(f"Tree error: {e}")
+
+
+_PDF_EMBED_RE = re.compile(r'data-pdf-src="([^"]+)"')
 
 
 def _build_page(
@@ -334,6 +337,7 @@ def _build_page(
     source_data_by_folder: dict,
     is_index: bool = False,
     is_raw_html: bool = False,
+    docs_root: str = "",
 ) -> None:
     """Render and write a single page."""
     # Get source data for this node
@@ -380,6 +384,16 @@ def _build_page(
             os.makedirs(out_dir, exist_ok=True)
         with open(out_path, 'w', encoding='utf-8') as f:
             f.write(page_html)
+
+        # Copy inline %pdf()% files to output directory next to the HTML page
+        if docs_root:
+            path_base = os.path.dirname(os.path.abspath(docs_root))
+            page_out_dir = os.path.dirname(out_path)
+            for pdf_match in _PDF_EMBED_RE.finditer(html_content):
+                pdf_rel = pdf_match.group(1)
+                pdf_src = os.path.join(path_base, pdf_rel)
+                if os.path.isfile(pdf_src):
+                    shutil.copy2(pdf_src, os.path.join(page_out_dir, os.path.basename(pdf_rel)))
 
     except (TagRendererError, CrossLinkError) as e:
         raise BuildError(f"Page '{node.title}': {e}")

@@ -186,6 +186,11 @@ def render_presentation_functions(
         func_name = match.group(1)
         raw_args = match.group(2).strip()
 
+        # %pdf(path/to/file.pdf)% — handled before dispatch (no source_data needed)
+        if func_name == 'pdf':
+            basename = raw_args.rsplit('/', 1)[-1].rsplit('\\', 1)[-1]
+            return f'<div class="pdf-viewer" data-pdf-url="{basename}" data-pdf-src="{raw_args}"></div>'
+
         try:
             return _dispatch_presentation(func_name, raw_args, source_data, folder_slug, current_output_path)
         except TagRendererError as e:
