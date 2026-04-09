@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "slop-doc"
-version = "1.2.3"
+version = "1.3"
 description = "Static documentation generator for Python projects"
 readme = "README.md"
 authors = [{name = "Ar4o"}]
@@ -22,7 +22,7 @@ dev = ["pytest", "pytest-cov"]
 slop-doc = "slop_doc.builder:main"
 
 [tool.setuptools.package-data]
-slop_doc = ["defaults/*.css", "defaults/*.js"]
+slop_doc = ["defaults/*.css", "defaults/*.js", "defaults/*.md"]
 
 [tool.setuptools.packages.find]
 where = ["."]

@@ -32,7 +32,7 @@ slop-doc start -d docs --open
 
 | Command | Description |
 |---|---|
-| `slop-doc init [--name <folder>]` | Create a new docs folder with a starter `root.md`. Default name: `docs` |
+| `slop-doc init [--name <folder>]` | Create a new docs folder with a starter `root.md` and `slop-doc-instruction.md` next to it. Default name: `docs` |
 | `slop-doc build [-d <dir>]` | Build documentation. Looks for `root.md` in `-d` dir or current directory |
 | `slop-doc start [-d <dir>] [-p <port>] [-o\|--open]` | Build, serve, and **live-reload** — watches for file changes, rebuilds automatically, and refreshes the browser via SSE. `--open` opens the browser. Default port from config or 8000 |
 
@@ -48,17 +48,24 @@ my-docs/                    <- docs root (contains root.md)
 +-- getting-started.md
 +-- installation.md
 +-- usage.md
-+-- api/                    <- subfolder with root.md = folder node
++-- api/                    <- subfolder with root.md + content = folder node
 |   +-- root.md             <- folder config + folder landing page
 |   +-- overview.md         <- page inside the folder
 |   +-- advanced/
 |       +-- root.md
++-- data/                   <- root.md with only {} = container with config
+|   +-- root.md             <- frontmatter works (py_source, children), but no page
+|   +-- overview.md
 +-- guides/                 <- subfolder WITHOUT root.md = container node
     +-- tutorial.md         <- children appear under "Guides" in nav
     +-- faq.md
 ```
 
-**Container nodes**: folders without `root.md` derive their title from the folder name (same rules as `.md` files — numeric prefixes stripped, separators cleaned, title-cased). Clicking a container node in the nav tree toggles its children — no page is generated.
+**Container nodes** come in two forms:
+- **Folder without `root.md`**: title derived from folder name, no config possible
+- **Folder with `root.md` but no body content** (e.g., just `{}`): same container behavior but frontmatter keys like `py_source`, `children`, `order` still work
+
+Both types derive their title from the folder name (same rules as `.md` files — numeric prefixes stripped, separators cleaned, title-cased). Clicking a container node in the nav tree toggles its children — no page is generated.
 
 **Build output**: a self-contained HTML site with `assets/style.css`, `assets/app.js`, and one `.html` per page. Use `slop-doc start` to serve locally with **live reload** — edit any `.md` file and the browser refreshes automatically. Pages load via SPA navigation (no full reload, smooth fade transitions). Also works with `file://` protocol (falls back to standard page loads).
 
@@ -368,6 +375,36 @@ This means `[[folder/AnyClass]]` always resolves, as long as the class exists in
 
 ---
 
+## Markdown Links (`.md` → `.html`)
+
+Standard markdown links to `.md` files are automatically rewritten to point to the correct `.html` output paths during build:
+
+```markdown
+[Data Engine](./DATA_ENGINE.md)              <!-- relative to current file -->
+[Data Engine](DATA_ENGINE.md)                <!-- global search by filename -->
+[Feature Engine](DATA_ENGINE.md#anchor)      <!-- with anchor -->
+[API Docs](api/)                             <!-- folder link -> api/index.html -->
+[API Section](api/#some-section)             <!-- folder link with anchor -->
+```
+
+### Resolution order
+
+1. **Relative to current file** — standard relative path resolution (e.g. `./sibling.md`, `../other/page.md`)
+2. **By filename globally** — if not found relative, searches the entire docs tree by filename
+
+If multiple files share the same name, the global search produces a **build error** with a message to use a relative path instead.
+
+### Folder links
+
+Links ending with `/` are treated as folder references — `root.md` is appended automatically:
+
+```markdown
+[API Reference](api/)           <!-- resolves to api/root.md -> api/index.html -->
+[API Section](api/#heading)     <!-- with anchor -->
+```
+
+---
+
 ## Docstring Format
 
 slop-doc parses **Google-style** docstrings:
@@ -490,6 +527,16 @@ Default port for `slop-doc start`. Overridden by the CLI `-p` flag. Default: `80
 ```json
 { "port": 9000 }
 ```
+
+---
+
+## Agent Instruction File
+
+`slop-doc-instruction.md` is a concise reference file created next to the docs folder. It is designed for AI agents and LLMs — a compact summary of all slop-doc features, syntax, and conventions.
+
+- **Created** on `slop-doc init` next to the docs folder
+- **Auto-updated** on every `build` / `start` when the slop-doc version changes (tracked via `<!-- slop-doc-version: X.X -->` comment)
+- **No manual maintenance** — always stays in sync with the installed slop-doc version
 
 ---
 
@@ -659,6 +706,9 @@ docs/build/
 | `[[folder/Class]]` | Page body | Cross-link to class page |
 | `[[folder/Class.method]]` | Page body | Cross-link to method anchor |
 | `[[folder/Class\|text]]` | Page body | Cross-link with custom display text |
+| `[text](file.md)` | Page body | Link to another `.md` page (auto-resolved to `.html`) |
+| `[text](file.md#anchor)` | Page body | Link to anchor in another page |
+| `[text](folder/)` | Page body | Link to folder's `root.md` page |
 
 ---
 
@@ -668,7 +718,7 @@ docs/build/
 
 | Module | Purpose |
 |---|---|
-| `builder.py` | Build orchestrator — drives the full pipeline, CLI commands (`init`, `build`, `start`), live-reload server |
+| `builder.py` | Build orchestrator — drives the full pipeline, CLI commands (`init`, `build`, `start`), live-reload server, `.md` link rewriting, instruction file sync |
 | `watcher.py` | File watcher — monitors docs folder for changes, debounced rebuild via `watchdog` |
 | `tree_builder.py` | Walks the docs folder, builds the navigation tree of `Node` objects |
 | `frontmatter.py` | Parses relaxed JSON front-matter from `.md` files |
@@ -683,10 +733,13 @@ docs/build/
 When `slop-doc build` runs, the following steps execute in order:
 
 ```
-1. Read project config
+1. Sync instruction file
+   +-- Create/update slop-doc-instruction.md next to docs folder (if version changed)
+
+2. Read project config
    +-- Parse root.md front-matter -> project_name, version, output_dir, settings
 
-2. Build navigation tree
+3. Build navigation tree
    +-- Recursively walk docs folder (tree_builder.py)
       +-- Parse each .md front-matter + body
       +-- Resolve py_source (inherited down the tree)
@@ -695,13 +748,16 @@ When `slop-doc build` runs, the following steps execute in order:
       +-- Create container nodes for folders without root.md
       +-- Sort nodes: order field -> numeric prefix -> alphabetical
 
-3. Build cross-link index
+4. Build .md link map
+   +-- Map md filenames -> html output paths (for .md link rewriting)
+
+5. Build cross-link index
    +-- Walk tree, index every class page URL + method anchors
 
-4. Generate search index
+6. Generate search index
    +-- Walk tree, collect all pages/classes/methods/functions/constants -> JSON
 
-5. Render each page
+7. Render each page
    |  For each node in the tree:
    |
    +-- Auto-class pages -> generate Markdown body from presentation functions
@@ -715,10 +771,11 @@ When `slop-doc build` runs, the following steps execute in order:
       b. Expand remaining {{data_tags}}         ->  cross-links or inline text
       c. Strip empty sections                   ->  remove headings with no content
       d. Markdown -> HTML                       ->  via python-markdown
-      e. Resolve [[cross-links]]                ->  relative <a href> tags
-      f. Assemble full HTML page                ->  3-column layout with nav, breadcrumb, search index, settings
+      e. Rewrite .md links                      ->  resolve .md hrefs to .html output paths
+      f. Resolve [[cross-links]]                ->  relative <a href> tags
+      g. Assemble full HTML page                ->  3-column layout with nav, breadcrumb, search index, settings
 
-6. Copy assets
+8. Copy assets
    +-- User assets (override) -> default style.css (fallback) -> app.js (always from defaults)
    +-- Copy referenced PDF files to output directory
 ```

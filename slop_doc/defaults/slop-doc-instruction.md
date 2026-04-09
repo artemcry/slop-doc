@@ -1,4 +1,4 @@
-<!-- slop-doc-version: 1.3 -->
+<!-- slop-doc-version: __VERSION__ -->
 # slop-doc — Agent Reference
 
 Static doc generator: `.md` files + Python AST parsing -> 3-column HTML site with nav tree, search, cross-links.

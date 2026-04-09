@@ -44,6 +44,41 @@ class BuildError(Exception):
     pass
 
 
+def _get_version() -> str:
+    """Get the package version."""
+    try:
+        from importlib.metadata import version
+        return version('slop-doc')
+    except Exception:
+        return 'dev'
+
+
+_INSTRUCTION_VERSION_RE = re.compile(r'<!-- slop-doc-version: (.+?) -->')
+
+
+def _sync_instruction_file(docs_root: str) -> None:
+    """Create or update slop-doc-instruction.md next to the docs folder."""
+    pkg_version = _get_version()
+    target = os.path.join(os.path.dirname(os.path.abspath(docs_root)), 'slop-doc-instruction.md')
+
+    # Check existing version
+    if os.path.isfile(target):
+        with open(target, 'r', encoding='utf-8') as f:
+            first_line = f.readline()
+        m = _INSTRUCTION_VERSION_RE.search(first_line)
+        if m and m.group(1) == pkg_version:
+            return  # up to date
+
+    # Write fresh copy from package defaults
+    defaults_pkg = importlib.resources.files("slop_doc.defaults")
+    src = defaults_pkg / "slop-doc-instruction.md"
+    content = src.read_text(encoding='utf-8')
+    content = content.replace('__VERSION__', pkg_version)
+    with open(target, 'w', encoding='utf-8') as f:
+        f.write(content)
+    print(f"Updated slop-doc-instruction.md (v{pkg_version})")
+
+
 # ---------------------------------------------------------------------------
 # Project config  (read from root.md front-matter)
 # ---------------------------------------------------------------------------
@@ -193,6 +228,8 @@ def build_docs(docs_root: str) -> None:
     Raises:
         BuildError: If the build fails.
     """
+    _sync_instruction_file(docs_root)
+
     try:
         # --- Config ---
         config = _read_project_config(docs_root)
@@ -221,6 +258,9 @@ def build_docs(docs_root: str) -> None:
         root_node, source_data_by_folder = build_tree_with_root(docs_root, exclude_dirs=exclude)
         tree = root_node.children  # top-level nav tree
 
+        # --- Step 1b: Build .md → .html link map ---
+        md_link_map = _build_md_link_map(root_node, docs_root)
+
         # --- Step 2: Build cross-link index ---
         index = build_index(tree, source_data_by_folder)
 
@@ -233,7 +273,7 @@ def build_docs(docs_root: str) -> None:
                 root_node, root_node.content, tree, index,
                 project_name, version, search_index, output_dir,
                 source_data_by_folder, is_index=True, docs_root=docs_root,
-                settings=settings,
+                settings=settings, md_link_map=md_link_map,
             )
 
         # --- Step 5: Build all pages ---
@@ -267,7 +307,7 @@ def build_docs(docs_root: str) -> None:
                             file_page_node, body, tree, index,
                             project_name, version, search_index, output_dir,
                             source_data_by_folder, is_raw_html=True, docs_root=docs_root,
-                            settings=settings,
+                            settings=settings, md_link_map=md_link_map,
                         )
                         pages_built += 1
                 continue
@@ -302,7 +342,7 @@ def build_docs(docs_root: str) -> None:
                 project_name, version, search_index, output_dir,
                 source_data_by_folder,
                 is_raw_html=raw_html, docs_root=docs_root,
-                settings=settings,
+                settings=settings, md_link_map=md_link_map,
             )
             pages_built += 1
 
@@ -316,6 +356,109 @@ def build_docs(docs_root: str) -> None:
 
 
 _PDF_EMBED_RE = re.compile(r'data-pdf-src="([^"]+)"')
+
+# ---------------------------------------------------------------------------
+# .md → .html link rewriting
+# ---------------------------------------------------------------------------
+
+_MD_HREF_RE = re.compile(
+    r'(<a\s[^>]*href=")((?!https?://|#)(?:[^"]*\.md|[^"]+/))((?:#[^"]*)?)"',
+    re.IGNORECASE,
+)
+
+
+def _build_md_link_map(root_node: Node, docs_root: str) -> tuple[dict[str, str], dict[str, str | None]]:
+    """Build maps for .md link resolution.
+
+    Returns:
+        (by_path, by_name):
+          by_path  — {relative/path.md: output.html}
+          by_name  — {filename.md: output.html | None}  None = duplicate
+    """
+    by_path: dict[str, str] = {}
+    by_name: dict[str, str | None] = {}
+
+    def _walk(node: Node):
+        if node.md_source_path:
+            rel = os.path.relpath(node.md_source_path, docs_root).replace('\\', '/')
+            html = node.output_path or 'index.html'
+            by_path[rel] = html
+            basename = os.path.basename(rel)
+            if basename == 'root.md':
+                # Index as "folder/root.md" so it's unique
+                name = '/'.join(rel.rsplit('/', 2)[-2:]) if '/' in rel else rel
+            else:
+                name = basename
+            if name in by_name:
+                by_name[name] = None  # ambiguous
+            else:
+                by_name[name] = html
+        for child in node.children:
+            _walk(child)
+
+    _walk(root_node)
+    return by_path, by_name
+
+
+def _rewrite_md_links(html: str, md_link_map: tuple[dict[str, str], dict[str, str | None]],
+                       current_md_path: str | None, docs_root: str) -> str:
+    """Rewrite href="*.md" → correct .html path.
+
+    1. Try relative to current file
+    2. Search by filename across entire docs tree (error if ambiguous)
+    """
+    if not current_md_path:
+        return html
+
+    by_path, by_name = md_link_map
+    if not by_path:
+        return html
+
+    current_dir = os.path.dirname(current_md_path)
+    current_rel = os.path.relpath(current_md_path, docs_root).replace('\\', '/')
+    current_html_dir = os.path.dirname(by_path.get(current_rel, ''))
+    errors: list[str] = []
+
+    def _replace(m):
+        prefix, md_ref, anchor = m.group(1), m.group(2), m.group(3) or ''
+
+        # Folder link: "api/" → "api/root.md"
+        is_folder = md_ref.endswith('/')
+        lookup_ref = md_ref + 'root.md' if is_folder else md_ref
+
+        # 1) Relative to current file
+        abs_target = os.path.normpath(os.path.join(current_dir, lookup_ref))
+        rel = os.path.relpath(abs_target, docs_root).replace('\\', '/')
+        target_html = by_path.get(rel)
+
+        # 2) By filename globally
+        if target_html is None:
+            name = os.path.basename(lookup_ref)
+            if is_folder:
+                # Search as "folder/root.md"
+                folder_name = md_ref.rstrip('/').rsplit('/', 1)[-1]
+                name = f"{folder_name}/root.md"
+            hit = by_name.get(name)
+            if hit is None and name in by_name:
+                errors.append(
+                    f"Ambiguous link '{md_ref}' in {os.path.basename(current_md_path)}"
+                    f" — multiple '{name}' exist. Use a relative path."
+                )
+                return m.group(0)
+            target_html = hit
+
+        if target_html is None:
+            return m.group(0)
+
+        rel_html = os.path.relpath(target_html, current_html_dir).replace('\\', '/')
+        return f'{prefix}{rel_html}{anchor}"'
+
+    result = _MD_HREF_RE.sub(_replace, html)
+
+    if errors:
+        raise BuildError('\n'.join(errors))
+
+    return result
 
 
 def _build_page(
@@ -332,6 +475,7 @@ def _build_page(
     is_raw_html: bool = False,
     docs_root: str = "",
     settings: dict | None = None,
+    md_link_map: dict[str, str] | None = None,
 ) -> None:
     """Render and write a single page."""
     # Get source data for this node
@@ -360,6 +504,11 @@ def _build_page(
 
         # Resolve [[cross-links]]
         html_content = resolve_links(html_content, index, node.output_path)
+
+        # Rewrite .md links → .html
+        if md_link_map:
+            html_content = _rewrite_md_links(html_content, md_link_map,
+                                              node.md_source_path, docs_root)
 
         # Assemble 3-column page
         page_html = assemble_page(html_content, node, tree, project_name, version, search_index, settings=settings)
@@ -443,6 +592,7 @@ def _cmd_init(name: str) -> int:
                 '# Welcome\n\n'
                 'Edit this file and add .md pages to build your documentation.\n')
 
+    _sync_instruction_file(target)
     print(f"Created '{name}/' with root.md.")
     print(f"Add .md files, then run 'slop-doc build -d {name}/'.")
     return 0

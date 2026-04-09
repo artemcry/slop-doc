@@ -178,9 +178,10 @@ def _walk_folder(
         output_prefix = slugify(folder_title)
 
     # Create the folder node
-    # If no root.md exists, this is a container node (no page, just a group in nav)
+    # If no root.md or root.md has no content — container node (no page, just a group in nav)
     has_root = os.path.isfile(root_md_path)
-    if has_root:
+    has_content = bool(folder_body.strip())
+    if has_root and has_content:
         folder_output_path = f"{output_prefix}/index.html" if output_prefix else ""
     else:
         folder_output_path = ""  # container node — no page generated
